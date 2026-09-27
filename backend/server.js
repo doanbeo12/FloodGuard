@@ -517,6 +517,12 @@ app.listen(PORT, async () => {
         console.error("Chạy: npm run db:init sau khi cấu hình file .env");
     }
 
-    startMqttCollector();
+    const mqttEnabled = String(process.env.MQTT_ENABLED ?? "true").toLowerCase() !== "false";
+    if (mqttEnabled) {
+        startMqttCollector();
+    } else {
+        console.log("[MQTT] Collector disabled by MQTT_ENABLED=false");
+    }
+
     startTideScheduler();
 });
