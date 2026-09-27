@@ -1,0 +1,13 @@
+{
+  "name": "floodguard-web",
+  "version": "1.0.0",
+  "private": true,
+  "description": "FloodGuard public monitoring web",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.21.1"
+  }
+}
