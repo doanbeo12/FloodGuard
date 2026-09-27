@@ -1015,7 +1015,9 @@ function applyPayload(data) {
 }
 
 // ===================== MQTT =====================
+const WEB_MQTT_ENABLED = window.FLOODGUARD_WEB_MQTT_ENABLED !== false;
 let mqttClient;
+if (WEB_MQTT_ENABLED) {
 try {
     mqttClient = mqtt.connect(MQTT_CONFIG.url, {
         clientId: `FloodWeb_${Math.random().toString(16).slice(2, 10)}`,
@@ -1070,6 +1072,11 @@ try {
 } catch (error) {
     console.error("MQTT initialization failed:", error);
     state.mqttConnected = false;
+}
+} else {
+    state.mqttConnected = false;
+    addEvent("Dashboard MQTT tạm tắt", "MQTT OFF", "bg-secondary");
+    console.log("[MQTT] Dashboard connection disabled by WEB_MQTT_ENABLED=false");
 }
 
 // Kiểm tra timeout Central liên tục, không phụ thuộc có bản tin mới.
