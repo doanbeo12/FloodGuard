@@ -1,0 +1,145 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="theme-color" content="#0f5f9f" />
+  <title>FloodGuard - Giám sát ngập đô thị</title>
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand-wrap">
+      <div class="logo">💧</div>
+      <div>
+        <h1>FloodGuard</h1>
+        <p>Giám sát ngập đô thị</p>
+      </div>
+    </div>
+    <div class="topbar-right">
+      <div id="systemPill" class="pill neutral">Đang kết nối...</div>
+      <div class="clock-block">
+        <strong id="clock">--:--:--</strong>
+        <span id="dateText">--</span>
+      </div>
+    </div>
+  </header>
+
+  <main class="page">
+    <section class="toolbar card">
+      <div>
+        <label for="siteSelect">Khu vực giám sát</label>
+        <select id="siteSelect"></select>
+      </div>
+      <div class="refresh-meta">
+        <span>Dữ liệu tự cập nhật mỗi 5 giây</span>
+        <button id="refreshBtn" type="button">Làm mới</button>
+      </div>
+    </section>
+
+    <section id="errorBox" class="error-box hidden"></section>
+
+    <section class="summary-grid">
+      <article class="card stat-card">
+        <span class="label">Mực nước lớn nhất</span>
+        <strong id="maxWater" class="big-value">--</strong>
+        <small>cm</small>
+      </article>
+      <article class="card stat-card">
+        <span class="label">Mức cảnh báo</span>
+        <strong id="alertText" class="big-value compact">--</strong>
+        <small id="scenarioText">--</small>
+      </article>
+      <article class="card stat-card">
+        <span class="label">Nguyên nhân</span>
+        <strong id="causeText" class="big-value compact">--</strong>
+        <small id="rainText">--</small>
+      </article>
+      <article class="card stat-card">
+        <span class="label">Central</span>
+        <strong id="connectionText" class="big-value compact">--</strong>
+        <small id="recordedAtText">--</small>
+      </article>
+    </section>
+
+    <section class="content-grid two-col">
+      <article class="card panel">
+        <div class="panel-head">
+          <div>
+            <h2>Cảm biến hiện tại</h2>
+            <p>Node 1 và Node 2</p>
+          </div>
+        </div>
+        <div class="node-grid">
+          <div class="node-box">
+            <div class="node-title"><span>Node 1</span><span id="node1Online" class="dot-label">--</span></div>
+            <strong id="node1Water">--</strong><small>cm</small>
+            <div class="muted" id="node1Pdr">PDR: --</div>
+          </div>
+          <div class="node-box">
+            <div class="node-title"><span>Node 2</span><span id="node2Online" class="dot-label">--</span></div>
+            <strong id="node2Water">--</strong><small>cm</small>
+            <div class="muted" id="node2Pdr">PDR: --</div>
+          </div>
+        </div>
+        <div class="detail-list">
+          <div><span>Xu hướng</span><strong id="trendText">--</strong></div>
+          <div><span>Tốc độ</span><strong id="rateText">--</strong></div>
+          <div><span>Cảnh báo sớm</span><strong id="earlyText">--</strong></div>
+          <div><span>Hướng dòng</span><strong id="flowText">--</strong></div>
+        </div>
+      </article>
+
+      <article class="card panel">
+        <div class="panel-head">
+          <div>
+            <h2>Thủy triều</h2>
+            <p id="tideStation">Trạm: --</p>
+          </div>
+          <span id="tideFresh" class="pill neutral">--</span>
+        </div>
+        <div class="detail-list">
+          <div><span>Pha triều</span><strong id="tidePhase">--</strong></div>
+          <div><span>Mốc kế tiếp</span><strong id="tideNext">--</strong></div>
+          <div><span>Đỉnh triều kế tiếp</span><strong id="tideHigh">--</strong></div>
+          <div><span>Bản tin</span><strong id="tideBulletin">--</strong></div>
+        </div>
+      </article>
+    </section>
+
+    <section class="card panel weather-panel">
+      <div class="panel-head">
+        <div>
+          <h2>Dự báo thời tiết theo giờ</h2>
+          <p>24 giờ tới</p>
+        </div>
+      </div>
+      <div id="weatherStrip" class="weather-strip">
+        <div class="empty">Đang tải dự báo...</div>
+      </div>
+    </section>
+
+    <section class="card panel">
+      <div class="panel-head">
+        <div>
+          <h2>Lịch sử mực nước</h2>
+          <p>6 giờ gần nhất</p>
+        </div>
+      </div>
+      <div class="chart-wrap">
+        <canvas id="historyChart" width="1200" height="360"></canvas>
+      </div>
+      <div class="legend">
+        <span><i class="legend-line line1"></i>Node 1</span>
+        <span><i class="legend-line line2"></i>Node 2</span>
+        <span><i class="legend-line line3"></i>Max</span>
+      </div>
+    </section>
+  </main>
+
+  <footer>FloodGuard • Hệ thống giám sát và cảnh báo ngập</footer>
+
+  <script src="/config.js"></script>
+  <script src="/app.js"></script>
+</body>
+</html>
