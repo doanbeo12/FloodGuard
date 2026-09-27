@@ -53,7 +53,13 @@ class _SiteDetailScreenState extends State<SiteDetailScreen> {
     // Biểu đồ lịch sử cập nhật theo chu kỳ ghi database 10 giây.
     _historyTimer = Timer.periodic(
       const Duration(seconds: 10),
-      (_) => _refreshHistory(),
+      (_) {
+        // Khi Central offline, giữ nguyên biểu đồ lịch sử thay vì tiếp tục
+        // polling như thể dữ liệu realtime vẫn đang chạy.
+        if (_centralOnline) {
+          _refreshHistory();
+        }
+      },
     );
 
     // Dự báo thời tiết thay đổi chậm hơn dữ liệu cảm biến.
@@ -62,6 +68,9 @@ class _SiteDetailScreenState extends State<SiteDetailScreen> {
       (_) => _refreshWeather(),
     );
   }
+
+  bool get _centralOnline =>
+      statusResult?['connection_status'] == 'ONLINE';
 
   @override
   void dispose() {
@@ -850,7 +859,13 @@ class _SiteDetailScreenState extends State<SiteDetailScreen> {
       statusResult?['data'] ?? {},
     );
 
-    final color = alertColor(data['alert_level']);
+    final connectionStatus =
+        statusResult?['connection_status']?.toString() ?? 'UNKNOWN';
+    final centralOnline = connectionStatus == 'ONLINE';
+
+    final color = centralOnline
+        ? alertColor(data['alert_level'])
+        : const Color(0xFF6B7280);
 
     final maxLevel = number(data['max_water_level']);
     final node1 = number(data['node1_water_level']);
@@ -877,18 +892,23 @@ class _SiteDetailScreenState extends State<SiteDetailScreen> {
     final hasHistoryForForecast =
         historyPoints.where((p) => p.max != null).length >= 3;
 
-    final forecastPoints = hasHistoryForForecast
+    final forecastPoints = centralOnline && hasHistoryForForecast
         ? _buildForecastPoints(maxLevel, forecastRate)
         : <ForecastPoint>[];
 
-    final methodText = hasHistoryForForecast
-        ? 'Dựa trên xu hướng dữ liệu mực nước trong 60 phút gần nhất.'
-        : 'Chưa đủ dữ liệu lịch sử; cần thêm dữ liệu để tạo dự báo.';
+    final methodText = !centralOnline
+        ? 'Central đang offline nên dự báo realtime tạm dừng.'
+        : hasHistoryForForecast
+            ? 'Dựa trên xu hướng dữ liệu mực nước trong 60 phút gần nhất.'
+            : 'Chưa đủ dữ liệu lịch sử; cần thêm dữ liệu để tạo dự báo.';
 
-    final forecastSummary = hasHistoryForForecast
-        ? _buildForecastSummary(maxLevel, forecastRate)
-        : 'Hiện chưa có đủ dữ liệu lịch sử để dự báo đáng tin cậy. '
-            'Hãy để hệ thống tiếp tục ghi nhận dữ liệu của Đường số 1.';
+    final forecastSummary = !centralOnline
+        ? 'Không sử dụng lần đo cuối để tiếp tục dự báo. '
+            'Dữ liệu realtime sẽ tự cập nhật khi Central online trở lại.'
+        : hasHistoryForForecast
+            ? _buildForecastSummary(maxLevel, forecastRate)
+            : 'Hiện chưa có đủ dữ liệu lịch sử để dự báo đáng tin cậy. '
+                'Hãy để hệ thống tiếp tục ghi nhận dữ liệu của Đường số 1.';
 
     return ListView(
       physics: const AlwaysScrollableScrollPhysics(),
@@ -906,7 +926,9 @@ class _SiteDetailScreenState extends State<SiteDetailScreen> {
           child: Column(
             children: [
               Text(
-                alertText(data['alert_level']),
+                centralOnline
+                    ? alertText(data['alert_level'])
+                    : 'Central đang offline',
                 style: TextStyle(
                   color: color,
                   fontSize: 21,
@@ -915,15 +937,19 @@ class _SiteDetailScreenState extends State<SiteDetailScreen> {
               ),
               const SizedBox(height: 7),
               Text(
-                '${maxLevel.toStringAsFixed(1)} cm',
+                centralOnline
+                    ? '${maxLevel.toStringAsFixed(1)} cm'
+                    : '--',
                 style: const TextStyle(
                   fontSize: 38,
                   fontWeight: FontWeight.bold,
                 ),
               ),
-              const Text(
-                'Mực nước lớn nhất hiện tại',
-                style: TextStyle(
+              Text(
+                centralOnline
+                    ? 'Mực nước lớn nhất hiện tại'
+                    : 'Không có dữ liệu realtime',
+                style: const TextStyle(
                   color: Color(0xFF6B7280),
                   fontSize: 13,
                 ),
@@ -949,7 +975,9 @@ class _SiteDetailScreenState extends State<SiteDetailScreen> {
             Expanded(
               child: _metricCard(
                 title: 'Node 1',
-                value: '${node1.toStringAsFixed(1)} cm',
+                value: centralOnline
+                    ? '${node1.toStringAsFixed(1)} cm'
+                    : '--',
                 icon: Icons.sensors,
                 color: const Color(0xFF2563EB),
               ),
@@ -958,7 +986,9 @@ class _SiteDetailScreenState extends State<SiteDetailScreen> {
             Expanded(
               child: _metricCard(
                 title: 'Node 2',
-                value: '${node2.toStringAsFixed(1)} cm',
+                value: centralOnline
+                    ? '${node2.toStringAsFixed(1)} cm'
+                    : '--',
                 icon: Icons.sensors,
                 color: const Color(0xFF7C3AED),
               ),
@@ -973,25 +1003,38 @@ class _SiteDetailScreenState extends State<SiteDetailScreen> {
             Expanded(
               child: _metricCard(
                 title: 'Mưa',
-                value:
-                    raining ? 'Đang có mưa' : 'Không có mưa',
-                icon: raining
-                    ? Icons.water_drop
-                    : Icons.wb_sunny_outlined,
-                color: raining
-                    ? const Color(0xFF2563EB)
-                    : const Color(0xFFF59E0B),
+                value: !centralOnline
+                    ? 'Không xác định'
+                    : raining
+                        ? 'Đang có mưa'
+                        : 'Không có mưa',
+                icon: !centralOnline
+                    ? Icons.cloud_off_outlined
+                    : raining
+                        ? Icons.water_drop
+                        : Icons.wb_sunny_outlined,
+                color: !centralOnline
+                    ? const Color(0xFF6B7280)
+                    : raining
+                        ? const Color(0xFF2563EB)
+                        : const Color(0xFFF59E0B),
               ),
             ),
             const SizedBox(width: 12),
             Expanded(
               child: _metricCard(
                 title: 'Xu hướng',
-                value: trendText(data['trend']),
-                icon: Icons.trending_up,
-                color: forecastRate > 0
-                    ? const Color(0xFFF97316)
-                    : const Color(0xFF16A34A),
+                value: centralOnline
+                    ? trendText(data['trend'])
+                    : 'Không xác định',
+                icon: centralOnline
+                    ? Icons.trending_up
+                    : Icons.pause_circle_outline,
+                color: !centralOnline
+                    ? const Color(0xFF6B7280)
+                    : forecastRate > 0
+                        ? const Color(0xFFF97316)
+                        : const Color(0xFF16A34A),
               ),
             ),
           ],
@@ -1002,37 +1045,43 @@ class _SiteDetailScreenState extends State<SiteDetailScreen> {
         _infoRow(
           icon: Icons.speed,
           title: 'Tốc độ thay đổi',
-          value:
-              '${backendRate.toStringAsFixed(3)} cm/phút',
+          value: centralOnline
+              ? '${backendRate.toStringAsFixed(3)} cm/phút'
+              : '--',
         ),
 
         _infoRow(
           icon: Icons.warning_amber_rounded,
           title: 'Cảnh báo sớm',
-          value: earlyWarning
-              ? 'Đang có cảnh báo sớm'
-              : 'Chưa có cảnh báo sớm',
-          valueColor:
-              earlyWarning ? Colors.red : Colors.green,
+          value: !centralOnline
+              ? 'Tạm dừng khi Central offline'
+              : earlyWarning
+                  ? 'Đang có cảnh báo sớm'
+                  : 'Chưa có cảnh báo sớm',
+          valueColor: !centralOnline
+              ? Colors.grey
+              : earlyWarning
+                  ? Colors.red
+                  : Colors.green,
         ),
 
         _infoRow(
           icon: Icons.water_drop_outlined,
           title: 'Nguyên nhân ngập',
-          value: floodCauseLabel,
-          valueColor: floodCauseColor(floodCauseCode),
+          value: centralOnline
+              ? floodCauseLabel
+              : 'Không xác định khi Central offline',
+          valueColor: centralOnline
+              ? floodCauseColor(floodCauseCode)
+              : Colors.grey,
         ),
 
         _infoRow(
           icon: Icons.cloud,
           title: 'Kết nối Central',
-          value:
-              statusResult?['connection_status']?.toString() ??
-                  'UNKNOWN',
+          value: connectionStatus,
           valueColor:
-              statusResult?['connection_status'] == 'ONLINE'
-                  ? Colors.green
-                  : Colors.grey,
+              centralOnline ? Colors.green : Colors.grey,
         ),
 
         const SizedBox(height: 22),
@@ -1085,12 +1134,44 @@ class _SiteDetailScreenState extends State<SiteDetailScreen> {
 
         const SizedBox(height: 12),
 
-        ForecastCard(
-          points: forecastPoints,
-          rateCmMin: forecastRate,
-          methodText: methodText,
-          summary: forecastSummary,
-        ),
+        centralOnline
+            ? ForecastCard(
+                points: forecastPoints,
+                rateCmMin: forecastRate,
+                methodText: methodText,
+                summary: forecastSummary,
+              )
+            : Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(18),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(17),
+                  border: Border.all(
+                    color: const Color(0xFFE5E7EB),
+                  ),
+                ),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Icon(
+                      Icons.pause_circle_outline,
+                      color: Color(0xFF6B7280),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Text(
+                        forecastSummary,
+                        style: const TextStyle(
+                          color: Color(0xFF6B7280),
+                          fontSize: 13,
+                          height: 1.4,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
 
         const SizedBox(height: 22),
 
