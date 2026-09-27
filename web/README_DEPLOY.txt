@@ -1,19 +1,4 @@
-FloodGuard Web 1.0
+FloodGuard Web v1.5.4 - Railway adaptation
 
-Mục đích: web cho người dùng cuối, đọc cùng FloodGuard Backend API.
-
-Local:
-  npm install
-  API_BASE_URL=http://localhost:3001 npm start
-  mở http://localhost:8080
-
-Railway:
-- Deploy thư mục này thành 1 service.
-- Variable: API_BASE_URL=https://<public-backend-domain>
-- Generate Domain cho service web.
-- Healthcheck: /health
-
-Web tự cập nhật:
-- Site/status: 5 giây
-- History: 15 giây
-- Weather: 10 phút
+UI and browser MQTT logic are preserved from the user's original dashboard.
+Only API base configuration was changed so history/tide/weather use the production backend instead of localhost.
