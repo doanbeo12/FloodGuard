@@ -998,3 +998,80 @@ function detectStateChanges() {
     state.previousEarlyWarning = state.earlyWarning;
     state.previousNode1Online = state.node1Online;
     state.previousNode2Online = state.node2Online;
+    state.previousRaining = state.raining;
+    state.previousScenario = state.scenario;
+    state.previousAlertLevel = state.alertLevel;
+}
+
+function applyPayload(data) {
+    const normalized = normalizePayload(data);
+    Object.assign(state, normalized);
+    if (!state.scenario) state.scenario = deriveScenario();
+    state.lastMessageAt = Date.now();
+    pushHypothesisHistory();
+    detectStateChanges();
+    pushChartPoint();
+    renderAll();
+}
+
+// ===================== MQTT =====================
+let mqttClient;
+try {
+    mqttClient = mqtt.connect(MQTT_CONFIG.url, {
+        clientId: `FloodWeb_${Math.random().toString(16).slice(2, 10)}`,
+        clean: true,
+        reconnectPeriod: MQTT_CONFIG.reconnectPeriod,
+        connectTimeout: 10000
+    });
+
+    mqttClient.on("connect", () => {
+        state.mqttConnected = true;
+        addEvent("Dashboard kết nối MQTT Broker", "MQTT", "bg-success");
+        mqttClient.subscribe(MQTT_CONFIG.topic, { qos: 0 }, error => {
+            if (error) {
+                console.error("MQTT subscribe failed:", error);
+                addEvent("Subscribe MQTT thất bại", "ERROR", "bg-danger");
+            }
+        });
+        renderAll();
+    });
+
+    mqttClient.on("reconnect", () => {
+        state.mqttConnected = false;
+        renderAll();
+    });
+
+    mqttClient.on("close", () => {
+        state.mqttConnected = false;
+        renderAll();
+    });
+
+    mqttClient.on("offline", () => {
+        state.mqttConnected = false;
+        renderAll();
+    });
+
+    mqttClient.on("error", error => {
+        console.error("MQTT error:", error);
+        state.mqttConnected = false;
+        renderAll();
+    });
+
+    mqttClient.on("message", (topic, payload) => {
+        if (topic !== MQTT_CONFIG.topic) return;
+        try {
+            const data = JSON.parse(payload.toString());
+            applyPayload(data);
+        } catch (error) {
+            console.error("Invalid MQTT payload:", error);
+            addEvent("Payload MQTT không hợp lệ", "ERROR", "bg-danger");
+        }
+    });
+} catch (error) {
+    console.error("MQTT initialization failed:", error);
+    state.mqttConnected = false;
+}
+
+// Kiểm tra timeout Central liên tục, không phụ thuộc có bản tin mới.
+setInterval(renderAll, 1000);
+renderAll();
