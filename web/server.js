@@ -6,12 +6,16 @@ const port = Number(process.env.PORT || 8080);
 const apiBaseUrl = String(
   process.env.API_BASE_URL || 'http://localhost:3001'
 ).replace(/\/$/, '');
+const webMqttEnabled = String(process.env.WEB_MQTT_ENABLED ?? 'true').toLowerCase() !== 'false';
 
 app.get('/config.js', (_req, res) => {
   res
     .type('application/javascript')
     .set('Cache-Control', 'no-store')
-    .send(`window.FLOODGUARD_API_BASE_URL=${JSON.stringify(apiBaseUrl)};`);
+    .send(
+      `window.FLOODGUARD_API_BASE_URL=${JSON.stringify(apiBaseUrl)};\n` +
+      `window.FLOODGUARD_WEB_MQTT_ENABLED=${JSON.stringify(webMqttEnabled)};`
+    );
 });
 
 app.get('/health', (_req, res) => {
