@@ -1,8 +1,8 @@
 {
-  "name": "floodguard-web",
-  "version": "1.0.0",
+  "name": "floodguard-dashboard-web",
+  "version": "1.5.4",
   "private": true,
-  "description": "FloodGuard public monitoring web",
+  "description": "FloodGuard original dashboard adapted for Railway production",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"
