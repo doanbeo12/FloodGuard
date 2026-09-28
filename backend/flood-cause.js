@@ -7,6 +7,7 @@ function envNumber(name, fallback) {
 
 const DEFAULT_FLOOD_WATER_THRESHOLD_CM = 3;
 const DEFAULT_TIDE_HIGH_WINDOW_MINUTES = 180;
+const DEFAULT_TIDE_MIN_LEVEL_M = 1.40;
 
 function finiteOrNull(value) {
     const number = Number(value);
@@ -19,6 +20,23 @@ function boolValue(value) {
 
 function normalizeScenario(value) {
     return typeof value === "string" ? value.trim().toUpperCase() : "";
+}
+
+function tideRiskBandForLevel(level) {
+    const value = finiteOrNull(level);
+    if (value == null) {
+        return { code: "UNKNOWN", label: "Chưa xác định", severity: 0 };
+    }
+    if (value >= 1.60) {
+        return { code: "BD3", label: "Rất cao (≥ BĐ III)", severity: 3 };
+    }
+    if (value >= 1.50) {
+        return { code: "BD2", label: "Cao (≥ BĐ II)", severity: 2 };
+    }
+    if (value >= 1.40) {
+        return { code: "BD1", label: "Theo dõi (≥ BĐ I)", severity: 1 };
+    }
+    return { code: "BELOW_BD1", label: "Dưới BĐ I", severity: 0 };
 }
 
 function detectFlooding(sensor = {}) {
@@ -74,14 +92,23 @@ function getTideHighEvidence(tide = null) {
         Math.round(envNumber("FLOOD_CAUSE_TIDE_WINDOW_MINUTES", DEFAULT_TIDE_HIGH_WINDOW_MINUTES))
     );
 
+    const minLevelM = Math.max(
+        0,
+        envNumber("FLOOD_CAUSE_TIDE_MIN_LEVEL_M", DEFAULT_TIDE_MIN_LEVEL_M)
+    );
+
     const base = {
         active: false,
+        withinWindow: false,
+        levelQualified: false,
         windowMinutes,
+        minLevelM,
         station: tide?.station || null,
         available: Boolean(tide?.available),
         stale: Boolean(tide?.stale),
         event: null,
         minutesFromHigh: null,
+        riskBand: tideRiskBandForLevel(null),
         basis: null
     };
 
@@ -136,21 +163,37 @@ function getTideHighEvidence(tide = null) {
 
     candidates.sort((a, b) => a.absoluteMinutes - b.absoluteMinutes);
     const nearest = candidates[0];
-    const active = nearest.absoluteMinutes <= windowMinutes;
+    const levelM = finiteOrNull(nearest.event.level_m);
+    const riskBand = tideRiskBandForLevel(levelM);
+    const withinWindow = nearest.absoluteMinutes <= windowMinutes;
+    const levelQualified = levelM != null && levelM >= minLevelM;
+    const active = withinWindow && levelQualified;
+
+    let basis;
+    if (!withinWindow) {
+        basis = `Mốc triều HIGH gần nhất cách ${nearest.absoluteMinutes} phút, ngoài cửa sổ ±${windowMinutes} phút.`;
+    } else if (!levelQualified) {
+        basis = levelM == null
+            ? "Mốc triều HIGH gần hiện tại nhưng không có mức triều hợp lệ."
+            : `Mốc triều HIGH gần hiện tại có mức ${levelM.toFixed(2)} m, thấp hơn ngưỡng đóng góp ${minLevelM.toFixed(2)} m.`;
+    } else {
+        basis = `Mốc triều HIGH gần hiện tại có mức ${levelM.toFixed(2)} m (${riskBand.label}) và nằm trong cửa sổ ±${windowMinutes} phút.`;
+    }
 
     return {
         ...base,
         active,
+        withinWindow,
+        levelQualified,
         event: {
             direction: nearest.direction,
             date: nearest.event.date || null,
             time: nearest.event.time || null,
-            level_m: finiteOrNull(nearest.event.level_m)
+            level_m: levelM
         },
         minutesFromHigh: nearest.minutesFromHigh,
-        basis: active
-            ? `Hiện tại nằm trong cửa sổ ±${windowMinutes} phút quanh mốc triều HIGH gần nhất.`
-            : `Mốc triều HIGH gần nhất cách ${nearest.absoluteMinutes} phút, ngoài cửa sổ ±${windowMinutes} phút.`
+        riskBand,
+        basis
     };
 }
 
@@ -190,7 +233,7 @@ function classifyFloodCause({ sensor = {}, tide = null } = {}) {
         label,
         flooding_detected: flood.active,
         basis,
-        methodology: "Rule-based attribution: flood state + rain sensor + proximity to forecast HIGH tide.",
+        methodology: "Rule-based attribution: flood state + rain sensor + HIGH-tide timing + forecast tide level.",
         note: "Đây là phân loại nguyên nhân có khả năng đóng góp, không phải chứng minh thủy động lực học.",
         evidence: {
             scenario: normalizeScenario(sensor.scenario) || null,
@@ -198,6 +241,11 @@ function classifyFloodCause({ sensor = {}, tide = null } = {}) {
             flood_threshold_cm: flood.thresholdCm,
             raining,
             tide_high_window: tideHigh.active,
+            tide_within_time_window: tideHigh.withinWindow,
+            tide_level_qualified: tideHigh.levelQualified,
+            tide_level_m: tideHigh.event?.level_m ?? null,
+            tide_risk_band: tideHigh.riskBand,
+            tide_min_contribution_level_m: tideHigh.minLevelM,
             tide_window_minutes: tideHigh.windowMinutes,
             tide_station: tideHigh.station,
             tide_available: tideHigh.available,
@@ -212,5 +260,6 @@ function classifyFloodCause({ sensor = {}, tide = null } = {}) {
 module.exports = {
     classifyFloodCause,
     detectFlooding,
-    getTideHighEvidence
+    getTideHighEvidence,
+    tideRiskBandForLevel
 };
