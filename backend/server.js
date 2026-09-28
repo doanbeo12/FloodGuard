@@ -5,13 +5,13 @@ require("dotenv").config();
 const { pool, checkDatabase } = require("./db");
 const { startMqttCollector } = require("./mqtt-collector");
 const { refreshTideData, getHcmcTideSummary, getSiteTideSummary, startTideScheduler } = require("./tide-service");
-const { getEarlyWarningSummary } = require("./early-warning");
+const { getEarlyWarningSummary, buildCombinedWarning } = require("./early-warning");
 const { getHcmcWeather, getHourlyWeather } = require("./weather-service");
 const { classifyFloodCause } = require("./flood-cause");
 
 const app = express();
 const PORT = Number(process.env.PORT || 3001);
-const API_VERSION = "1.7.0-flood-cause";
+const API_VERSION = "1.8.0-tide-warning";
 const CENTRAL_TIMEOUT_MS = Number(process.env.CENTRAL_TIMEOUT_MS || 20000);
 
 app.use(cors());
@@ -130,7 +130,8 @@ app.get("/api/sites", async (req, res) => {
             `SELECT ms.site_id, ms.site_name, ms.street_name, ms.latitude, ms.longitude, ms.description, ms.tide_station,
                     sr.id AS reading_id, sr.recorded_at,
                     sr.node1_water_level, sr.node2_water_level, sr.max_water_level,
-                    sr.raining, sr.alert_level, sr.scenario, sr.trend, sr.rate_cm_min, sr.early_warning
+                    sr.raining, sr.alert_level, sr.scenario, sr.trend, sr.rate_cm_min,
+                    sr.early_warning, sr.early_warning_code, sr.monitoring_degraded
              FROM monitoring_sites ms
              LEFT JOIN (
                  SELECT s.*
@@ -145,7 +146,33 @@ app.get("/api/sites", async (req, res) => {
              ORDER BY ms.site_id`
         );
 
-        res.json({ count: rows.length, data: rows.map(formatSiteSummary) });
+        const data = await Promise.all(rows.map(async row => {
+            const summary = formatSiteSummary(row);
+            if (row.reading_id == null) return summary;
+
+            let tide = null;
+            try {
+                tide = await getSiteTideSummary(row.site_id, row.tide_station);
+            } catch (error) {
+                tide = {
+                    available: false,
+                    station: row.tide_station || null,
+                    stale: true,
+                    error: error.message
+                };
+            }
+
+            return {
+                ...summary,
+                combined_warning: buildCombinedWarning({
+                    sensor: row,
+                    tide,
+                    connection_status: summary.connection_status
+                })
+            };
+        }));
+
+        res.json({ count: data.length, data });
     } catch (error) {
         res.status(500).json({ error: error.message });
     }
@@ -218,7 +245,13 @@ app.get("/api/sites/:id/status", async (req, res) => {
         }
 
         const row = rows[0];
+        const currentConnectionStatus = connectionStatus(row.recorded_at);
         const floodCause = classifyFloodCause({ sensor: row, tide });
+        const combinedWarning = buildCombinedWarning({
+            sensor: row,
+            tide,
+            connection_status: currentConnectionStatus
+        });
 
         res.json({
             site: {
@@ -235,8 +268,9 @@ app.get("/api/sites/:id/status", async (req, res) => {
             flood_cause: floodCause.code,
             flood_cause_label: floodCause.label,
             flood_cause_detail: floodCause,
+            combined_warning: combinedWarning,
             status: "ACTIVE",
-            connection_status: connectionStatus(row.recorded_at),
+            connection_status: currentConnectionStatus,
             data: {
                 ...row,
                 node1_distance: numberOrNull(row.node1_distance),
