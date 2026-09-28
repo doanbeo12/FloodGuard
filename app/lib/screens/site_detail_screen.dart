@@ -308,6 +308,129 @@ class _SiteDetailScreenState extends State<SiteDetailScreen> {
     }
   }
 
+  Color combinedWarningColor(dynamic severity) {
+    switch (severity?.toString()) {
+      case 'DANGER':
+        return const Color(0xFFDC2626);
+      case 'WARNING':
+        return const Color(0xFFF97316);
+      case 'WATCH':
+        return const Color(0xFFEAB308);
+      case 'NORMAL':
+      default:
+        return const Color(0xFF16A34A);
+    }
+  }
+
+  Widget _buildCombinedWarningCard(
+    Map<String, dynamic> warning,
+  ) {
+    final severity = warning['severity']?.toString() ?? 'NORMAL';
+    final color = combinedWarningColor(severity);
+    final label = warning['label']?.toString() ?? 'Chưa có phân tích';
+    final message = warning['message']?.toString() ?? '';
+    final active = warning['active'] == true;
+
+    final tideRaw = warning['tide'];
+    final tide = tideRaw is Map
+        ? Map<String, dynamic>.from(tideRaw)
+        : <String, dynamic>{};
+    final tideLevel = _toDouble(tide['level_m']);
+    final riskRaw = tide['risk_band'];
+    final risk = riskRaw is Map
+        ? Map<String, dynamic>.from(riskRaw)
+        : <String, dynamic>{};
+    final riskLabel = risk['label']?.toString();
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(17),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(
+          color: color.withValues(alpha: 0.28),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(
+                active
+                    ? Icons.warning_amber_rounded
+                    : Icons.verified_outlined,
+                color: color,
+              ),
+              const SizedBox(width: 9),
+              const Expanded(
+                child: Text(
+                  'Cảnh báo tổng hợp cảm biến + triều',
+                  style: TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 9,
+                  vertical: 4,
+                ),
+                decoration: BoxDecoration(
+                  color: color.withValues(alpha: 0.13),
+                  borderRadius: BorderRadius.circular(9),
+                ),
+                child: Text(
+                  warning['severity_label']?.toString() ?? severity,
+                  style: TextStyle(
+                    color: color,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Text(
+            label,
+            style: TextStyle(
+              color: color,
+              fontSize: 16,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          if (message.isNotEmpty) ...[
+            const SizedBox(height: 6),
+            Text(
+              message,
+              style: const TextStyle(
+                color: Color(0xFF4B5563),
+                fontSize: 13,
+                height: 1.4,
+              ),
+            ),
+          ],
+          if (tideLevel != null) ...[
+            const SizedBox(height: 10),
+            Text(
+              'Triều dùng trong phân tích: '
+              '${tideLevel.toStringAsFixed(2)} m'
+              '${riskLabel == null ? '' : ' • $riskLabel'}',
+              style: const TextStyle(
+                color: Color(0xFF374151),
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
   DateTime? _weatherDateTime(dynamic value) {
     final parsed = DateTime.tryParse(value?.toString() ?? '');
     return parsed?.toLocal();
@@ -877,7 +1000,23 @@ class _SiteDetailScreenState extends State<SiteDetailScreen> {
     final raining = data['raining'] == true;
     final earlyWarning = data['early_warning'] == true;
 
-    // flood_cause được backend v1.7.0 trả ở cấp ngoài cùng của /status.
+    final combinedRaw = statusResult?['combined_warning'];
+    final combinedWarning = combinedRaw is Map
+        ? Map<String, dynamic>.from(combinedRaw)
+        : <String, dynamic>{};
+    final warningTideRaw = combinedWarning['tide'];
+    final warningTide = warningTideRaw is Map
+        ? Map<String, dynamic>.from(warningTideRaw)
+        : <String, dynamic>{};
+    final tideLevelForWarning = _toDouble(warningTide['level_m']);
+    final tideRiskRaw = warningTide['risk_band'];
+    final tideRisk = tideRiskRaw is Map
+        ? Map<String, dynamic>.from(tideRiskRaw)
+        : <String, dynamic>{};
+    final tideRiskCode =
+        tideRisk['code']?.toString() ?? 'UNKNOWN';
+
+    // flood_cause được Backend trả ở cấp ngoài cùng của /status.
     // Có fallback sang data để app vẫn tương thích nếu backend thay đổi vị trí field.
     final floodCauseCode =
         statusResult?['flood_cause']?.toString() ??
@@ -957,6 +1096,10 @@ class _SiteDetailScreenState extends State<SiteDetailScreen> {
             ],
           ),
         ),
+
+        const SizedBox(height: 14),
+
+        _buildCombinedWarningCard(combinedWarning),
 
         const SizedBox(height: 18),
 
@@ -1052,7 +1195,7 @@ class _SiteDetailScreenState extends State<SiteDetailScreen> {
 
         _infoRow(
           icon: Icons.warning_amber_rounded,
-          title: 'Cảnh báo sớm',
+          title: 'Cảnh báo cảm biến',
           value: !centralOnline
               ? 'Tạm dừng khi Central offline'
               : earlyWarning
@@ -1073,6 +1216,18 @@ class _SiteDetailScreenState extends State<SiteDetailScreen> {
               : 'Không xác định khi Central offline',
           valueColor: centralOnline
               ? floodCauseColor(floodCauseCode)
+              : Colors.grey,
+        ),
+
+        _infoRow(
+          icon: Icons.waves_outlined,
+          title: 'Triều trong phân tích',
+          value: tideLevelForWarning == null
+              ? 'Chưa có dữ liệu'
+              : '${tideLevelForWarning.toStringAsFixed(2)} m • '
+                  '$tideRiskCode',
+          valueColor: warningTide['contributing'] == true
+              ? const Color(0xFF7C3AED)
               : Colors.grey,
         ),
 
