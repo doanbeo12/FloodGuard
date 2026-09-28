@@ -882,6 +882,45 @@ function renderSensorEarlyWarning(fresh) {
 
     card.classList.remove("warning-danger", "warning-high", "warning-medium", "warning-low", "warning-limited");
 
+    const combined = window.FLOODGUARD_COMBINED_WARNING;
+    if (combined && typeof combined === "object") {
+        const severity = String(combined.severity || "NORMAL");
+        const meta = {
+            DANGER: { cls: "warning-danger", badge: "bg-danger", text: "NGUY CƠ RẤT CAO" },
+            WARNING: { cls: "warning-high", badge: "bg-warning text-dark", text: "NGUY CƠ CAO" },
+            WATCH: { cls: "warning-medium", badge: "bg-info text-dark", text: "CẦN THEO DÕI" },
+            NORMAL: { cls: "warning-low", badge: "bg-success", text: "BÌNH THƯỜNG" }
+        }[severity] || { cls: "warning-limited", badge: "bg-secondary", text: severity };
+
+        card.classList.add(meta.cls);
+        badge.className = `badge ${meta.badge}`;
+        badge.textContent = meta.text;
+        el("earlyWarningRisk").textContent = combined.label || combined.severity_label || "--";
+        el("earlyWarningMessage").textContent = combined.message || "--";
+
+        el("waterRate").textContent = state.rateCmPerMin == null
+            ? "-- cm/phút"
+            : `${state.rateCmPerMin >= 0 ? "+" : ""}${state.rateCmPerMin.toFixed(2)} cm/phút`;
+        el("waterTrend").textContent = trendText(state.trend);
+        el("nextThreshold").textContent = state.nextThresholdCm == null ? "--" : `${state.nextThresholdCm.toFixed(0)} cm`;
+        el("etaNext").textContent = etaDisplay(state.etaSeconds);
+        el("flowDirection").textContent = flowText(state.flowDirection);
+
+        const tideInfo = el("combinedTideInfo");
+        if (tideInfo) {
+            const tide = combined.tide || {};
+            const level = Number(tide.level_m);
+            const band = tide.risk_band?.code || "";
+            tideInfo.textContent = Number.isFinite(level)
+                ? `${level.toFixed(2)} m${band ? ` • ${band}` : ""}`
+                : "Chưa có dữ liệu";
+        }
+        return;
+    }
+
+    const tideInfo = el("combinedTideInfo");
+    if (tideInfo) tideInfo.textContent = "--";
+
     if (!fresh) {
         card.classList.add("warning-limited");
         badge.className = "badge bg-secondary";
