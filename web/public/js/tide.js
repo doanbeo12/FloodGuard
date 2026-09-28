@@ -1,7 +1,7 @@
 // ============================================================
-// TIDE + WEATHER REFERENCE DATA - Dashboard v1.5.1
-// Hai nguon nay CHI DE HIEN THI THAM KHAO.
-// Early Warning chinh duoc xu ly tu du lieu cam bien o dashboard.js / Central.
+// TIDE + WEATHER DATA - Dashboard
+// Tide is now also used by Backend for combined flood-cause and early-warning analysis.
+// Central local LED/buzzer warning remains sensor-based so it can work without Internet.
 // ============================================================
 
 const REF_API_BASE = `${String(window.FLOODGUARD_API_BASE_URL || "http://localhost:3001").replace(/\/$/, "")}/api`;
@@ -146,9 +146,10 @@ function renderWeather(data) {
 }
 
 async function loadReferenceData() {
-    const [tideResult, weatherResult] = await Promise.allSettled([
+    const [tideResult, weatherResult, siteStatusResult] = await Promise.allSettled([
         apiGet("/tide/hcmc"),
-        apiGet("/weather/hcmc")
+        apiGet("/weather/hcmc"),
+        apiGet("/sites/1/status")
     ]);
 
     if (tideResult.status === "fulfilled") renderTide(tideResult.value);
@@ -156,6 +157,13 @@ async function loadReferenceData() {
 
     if (weatherResult.status === "fulfilled") renderWeather(weatherResult.value);
     else renderWeather({ available: false, message: "Không kết nối được API thời tiết." });
+
+    if (siteStatusResult.status === "fulfilled") {
+        window.FLOODGUARD_COMBINED_WARNING =
+            siteStatusResult.value?.combined_warning || null;
+    } else {
+        window.FLOODGUARD_COMBINED_WARNING = null;
+    }
 }
 
 async function manualRefreshTide() {
