@@ -177,7 +177,7 @@
                     <div class="col-xl-4">
                         <article id="earlyWarningCard" class="dashboard-card early-warning-card warning-limited h-100">
                             <div class="card-header-custom">
-                                <span><i class="fa-solid fa-triangle-exclamation"></i> CẢNH BÁO SỚM TỪ CẢM BIẾN</span>
+                                <span><i class="fa-solid fa-triangle-exclamation"></i> CẢNH BÁO TỔNG HỢP CẢM BIẾN + TRIỀU</span>
                                 <span id="earlyWarningBadge" class="badge bg-secondary">CHỜ DỮ LIỆU</span>
                             </div>
                             <div class="early-warning-main sensor-warning-layout">
@@ -192,6 +192,7 @@
                                     <div class="trend-metric"><span>Ngưỡng tiếp theo</span><strong id="nextThreshold">-- cm</strong></div>
                                     <div class="trend-metric"><span>ETA tới ngưỡng</span><strong id="etaNext">--</strong></div>
                                     <div class="trend-metric"><span>Hướng lan 2 node</span><strong id="flowDirection">--</strong></div>
+                                    <div class="trend-metric"><span>Triều dùng phân tích</span><strong id="combinedTideInfo">--</strong></div>
                                 </div>
                             </div>
                         </article>
@@ -387,8 +388,8 @@
 </div>
 
 <script src="config.js"></script>
-<script src="js/dashboard.js?v=1.5.4-mqtt-toggle"></script>
+<script src="js/dashboard.js?v=1.8-tide-warning"></script>
 <script src="js/history.js"></script>
-<script src="js/tide.js"></script>
+<script src="js/tide.js?v=1.8-tide-warning"></script>
 </body>
 </html>
