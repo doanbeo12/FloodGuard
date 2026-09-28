@@ -82,6 +82,11 @@ class _HomeScreenState extends State<HomeScreen> {
 
   bool get hasAlert {
     for (final site in sites) {
+      final combined = site['combined_warning'];
+      if (combined is Map && combined['active'] == true) {
+        return true;
+      }
+
       final latest = site['latest'];
       if (latest == null) continue;
 
@@ -104,6 +109,15 @@ class _HomeScreenState extends State<HomeScreen> {
 
     if (site['connection_status'] == 'OFFLINE') {
       return const Color(0xFF6B7280);
+    }
+
+    final combined = site['combined_warning'];
+    if (combined is Map) {
+      final combinedLevel =
+          int.tryParse(combined['level']?.toString() ?? '0') ?? 0;
+      if (combinedLevel >= 3) return const Color(0xFFDC2626);
+      if (combinedLevel >= 2) return const Color(0xFFF97316);
+      if (combinedLevel >= 1) return const Color(0xFFEAB308);
     }
 
     final latest = site['latest'];
@@ -132,6 +146,12 @@ class _HomeScreenState extends State<HomeScreen> {
 
     if (site['connection_status'] == 'OFFLINE') {
       return 'Thiết bị đang offline';
+    }
+
+    final combined = site['combined_warning'];
+    if (combined is Map && combined['active'] == true) {
+      final label = combined['label']?.toString();
+      if (label != null && label.isNotEmpty) return label;
     }
 
     final latest = site['latest'];
