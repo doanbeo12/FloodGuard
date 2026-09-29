@@ -116,8 +116,6 @@ class AlertScreen extends StatelessWidget {
             _empty('Chưa có khu vực nào được triển khai.')
           else
             ...deployed.map(_siteCard),
-          const SizedBox(height: 24),
-          _legend(),
         ],
       ),
     );
@@ -423,40 +421,6 @@ class AlertScreen extends StatelessWidget {
     );
   }
 
-  Widget _legend() {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: const Color(0xFFE5E7EB)),
-      ),
-      child: const Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            'Cách hệ thống tạo cảnh báo',
-            style: TextStyle(
-              fontWeight: FontWeight.bold,
-              fontSize: 15,
-            ),
-          ),
-          SizedBox(height: 9),
-          Text(
-            '• Central phân tích mực nước, xu hướng, tốc độ và ETA.\n'
-            '• Backend kết hợp trạng thái cảm biến, mưa và dữ liệu triều.\n'
-            '• Triều chỉ đóng góp khi dữ liệu còn hiệu lực, ở gần đỉnh HIGH và đạt ngưỡng cấu hình.\n'
-            '• Cảnh báo tại chỗ bằng LED/buzzer vẫn hoạt động độc lập với Internet.',
-            style: TextStyle(
-              color: Color(0xFF6B7280),
-              height: 1.55,
-              fontSize: 12,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
 
   Widget _empty(String text) {
     return Container(
