@@ -3,6 +3,8 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../services/api_service.dart';
+import 'alert_screen.dart';
+import 'info_screen.dart';
 import 'site_detail_screen.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -18,6 +20,7 @@ class _HomeScreenState extends State<HomeScreen> {
   List<dynamic> sites = [];
   Timer? _refreshTimer;
   bool _isRefreshing = false;
+  int _selectedIndex = 0;
 
   @override
   void initState() {
@@ -194,21 +197,46 @@ class _HomeScreenState extends State<HomeScreen> {
         child: Column(
           children: [
             Expanded(
-              child: RefreshIndicator(
-                onRefresh: loadSites,
-                child: loading
-                    ? const Center(
-                        child: CircularProgressIndicator(),
-                      )
-                    : error != null
-                        ? _buildError()
-                        : _buildHome(),
-              ),
+              child: _buildSelectedPage(),
             ),
             _buildBottomNavigation(),
           ],
         ),
       ),
+    );
+  }
+
+  Widget _buildSelectedPage() {
+    if (_selectedIndex == 2) {
+      return const InfoScreen();
+    }
+
+    if (_selectedIndex == 1) {
+      if (loading && sites.isEmpty) {
+        return const Center(
+          child: CircularProgressIndicator(),
+        );
+      }
+
+      if (error != null && sites.isEmpty) {
+        return _buildError();
+      }
+
+      return AlertScreen(
+        sites: sites,
+        onRefresh: loadSites,
+      );
+    }
+
+    return RefreshIndicator(
+      onRefresh: loadSites,
+      child: loading
+          ? const Center(
+              child: CircularProgressIndicator(),
+            )
+          : error != null && sites.isEmpty
+              ? _buildError()
+              : _buildHome(),
     );
   }
 
@@ -287,43 +315,51 @@ class _HomeScreenState extends State<HomeScreen> {
             ],
           ),
         ),
-        Container(
-          width: 43,
-          height: 43,
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(14),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withValues(alpha: 0.06),
-                blurRadius: 8,
-                offset: const Offset(0, 3),
-              ),
-            ],
-          ),
-          child: Stack(
-            children: [
-              const Center(
-                child: Icon(
-                  Icons.notifications_none,
-                  color: Color(0xFF374151),
-                  size: 25,
+        InkWell(
+          borderRadius: BorderRadius.circular(14),
+          onTap: () {
+            setState(() {
+              _selectedIndex = 1;
+            });
+          },
+          child: Container(
+            width: 43,
+            height: 43,
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(14),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.06),
+                  blurRadius: 8,
+                  offset: const Offset(0, 3),
                 ),
-              ),
-              if (hasAlert)
-                Positioned(
-                  right: 9,
-                  top: 8,
-                  child: Container(
-                    width: 8,
-                    height: 8,
-                    decoration: const BoxDecoration(
-                      color: Colors.red,
-                      shape: BoxShape.circle,
-                    ),
+              ],
+            ),
+            child: Stack(
+              children: [
+                const Center(
+                  child: Icon(
+                    Icons.notifications_none,
+                    color: Color(0xFF374151),
+                    size: 25,
                   ),
                 ),
-            ],
+                if (hasAlert)
+                  Positioned(
+                    right: 9,
+                    top: 8,
+                    child: Container(
+                      width: 8,
+                      height: 8,
+                      decoration: const BoxDecoration(
+                        color: Colors.red,
+                        shape: BoxShape.circle,
+                      ),
+                    ),
+                  ),
+              ],
+            ),
           ),
         ),
       ],
@@ -610,6 +646,11 @@ class _HomeScreenState extends State<HomeScreen> {
                 'Cảnh báo',
                 'Tình trạng hiện tại',
                 const Color(0xFFF59E0B),
+                onTap: () {
+                  setState(() {
+                    _selectedIndex = 1;
+                  });
+                },
               ),
             ),
           ],
@@ -622,18 +663,22 @@ class _HomeScreenState extends State<HomeScreen> {
     IconData icon,
     String title,
     String subtitle,
-    Color color,
-  ) {
-    return Container(
-      padding: const EdgeInsets.all(15),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(17),
-        border: Border.all(
-          color: const Color(0xFFE5E7EB),
+    Color color, {
+    VoidCallback? onTap,
+  }) {
+    return InkWell(
+      borderRadius: BorderRadius.circular(17),
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.all(15),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(17),
+          border: Border.all(
+            color: const Color(0xFFE5E7EB),
+          ),
         ),
-      ),
-      child: Column(
+        child: Column(
         crossAxisAlignment:
             CrossAxisAlignment.start,
         children: [
@@ -665,7 +710,8 @@ class _HomeScreenState extends State<HomeScreen> {
               color: Color(0xFF6B7280),
             ),
           ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -687,21 +733,22 @@ class _HomeScreenState extends State<HomeScreen> {
             child: _bottomItem(
               Icons.home_rounded,
               'Trang chủ',
-              true,
+              0,
             ),
           ),
           Expanded(
             child: _bottomItem(
               Icons.notifications_none_rounded,
               'Cảnh báo',
-              false,
+              1,
+              showDot: hasAlert,
             ),
           ),
           Expanded(
             child: _bottomItem(
               Icons.info_outline_rounded,
               'Thông tin',
-              false,
+              2,
             ),
           ),
         ],
@@ -712,33 +759,55 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget _bottomItem(
     IconData icon,
     String title,
-    bool selected,
-  ) {
+    int index, {
+    bool showDot = false,
+  }) {
+    final selected = _selectedIndex == index;
     final color = selected
         ? const Color(0xFF1769AA)
         : const Color(0xFF9CA3AF);
 
-    return Column(
-      mainAxisAlignment:
-          MainAxisAlignment.center,
-      children: [
-        Icon(
-          icon,
-          color: color,
-          size: 25,
-        ),
-        const SizedBox(height: 3),
-        Text(
-          title,
-          style: TextStyle(
-            color: color,
-            fontSize: 11,
-            fontWeight: selected
-                ? FontWeight.bold
-                : FontWeight.normal,
+    return InkWell(
+      onTap: () {
+        setState(() {
+          _selectedIndex = index;
+        });
+      },
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Stack(
+            clipBehavior: Clip.none,
+            children: [
+              Icon(
+                icon,
+                color: color,
+                size: 25,
+              ),
+              if (showDot)
+                const Positioned(
+                  right: -2,
+                  top: -2,
+                  child: CircleAvatar(
+                    radius: 4,
+                    backgroundColor: Color(0xFFDC2626),
+                  ),
+                ),
+            ],
           ),
-        ),
-      ],
+          const SizedBox(height: 3),
+          Text(
+            title,
+            style: TextStyle(
+              color: color,
+              fontSize: 11,
+              fontWeight: selected
+                  ? FontWeight.bold
+                  : FontWeight.normal,
+            ),
+          ),
+        ],
+      ),
     );
   }
 
