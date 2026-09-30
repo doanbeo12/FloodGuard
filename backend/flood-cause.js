@@ -6,6 +6,8 @@ function envNumber(name, fallback) {
 }
 
 const DEFAULT_FLOOD_WATER_THRESHOLD_CM = 3;
+const DEFAULT_MIN_RISE_RATE_CM_MIN = 0.20;
+const DEFAULT_NODE_DISAGREEMENT_CM = 5.0;
 const DEFAULT_TIDE_HIGH_WINDOW_MINUTES = 180;
 const DEFAULT_TIDE_MIN_LEVEL_M = 1.40;
 
@@ -20,6 +22,13 @@ function boolValue(value) {
 
 function normalizeScenario(value) {
     return typeof value === "string" ? value.trim().toUpperCase() : "";
+}
+
+function isMeasurementAnomalyScenario(value) {
+    const scenario = normalizeScenario(value);
+    return scenario === "OBSTRUCTION_SUSPECTED"
+        || scenario === "TRANSIENT_ANOMALY"
+        || scenario === "LEVEL_PENDING";
 }
 
 function tideRiskBandForLevel(level) {
@@ -42,37 +51,116 @@ function tideRiskBandForLevel(level) {
 function detectFlooding(sensor = {}) {
     const scenario = normalizeScenario(sensor.scenario);
     const currentWaterCm = finiteOrNull(sensor.max_water_level ?? sensor.maxWaterLevel);
+    const node1WaterCm = finiteOrNull(sensor.node1_water_level ?? sensor.node1WaterLevel);
+    const node2WaterCm = finiteOrNull(sensor.node2_water_level ?? sensor.node2WaterLevel);
+    const rateCmMin = finiteOrNull(sensor.rate_cm_min ?? sensor.rateCmPerMin);
+    const trend = normalizeScenario(sensor.trend);
+    const earlyWarning = boolValue(sensor.early_warning ?? sensor.earlyWarning);
+
     const thresholdCm = Math.max(
         0,
         envNumber("FLOOD_CAUSE_WATER_THRESHOLD_CM", DEFAULT_FLOOD_WATER_THRESHOLD_CM)
     );
+    const minRiseRateCmMin = Math.max(
+        0,
+        envNumber("FLOOD_CONFIRM_MIN_RISE_RATE_CM_MIN", DEFAULT_MIN_RISE_RATE_CM_MIN)
+    );
+    const disagreementCm = Math.max(
+        0,
+        envNumber("FLOOD_CONFIRM_NODE_DISAGREEMENT_CM", DEFAULT_NODE_DISAGREEMENT_CM)
+    );
 
-    // Khi Central xác định lỗi cảm biến hoàn toàn / cả hai Node offline,
-    // không dùng giá trị nước còn sót lại để kết luận đang ngập.
+    const nodeDifferenceCm = node1WaterCm != null && node2WaterCm != null
+        ? Math.abs(node1WaterCm - node2WaterCm)
+        : null;
+
+    const risingTrend = trend === "RISING" || trend === "RISING_FAST";
+    const risingEvidence = rateCmMin != null
+        && rateCmMin >= minRiseRateCmMin
+        && (risingTrend || earlyWarning);
+
+    // Không dùng giá trị còn sót lại khi mất toàn bộ phép đo.
     if (scenario === "SENSOR_FAULT" || scenario === "NODES_OFFLINE") {
         return {
             active: false,
             currentWaterCm,
             thresholdCm,
-            basis: `Không phân loại nguyên nhân khi scenario=${scenario}.`
+            rateCmMin,
+            minRiseRateCmMin,
+            nodeDifferenceCm,
+            risingEvidence,
+            measurementRejected: true,
+            basis: `Không phân loại ngập khi scenario=${scenario}.`
         };
     }
 
+    // Firmware Central mới đánh dấu vật cản/nhiễu và trạng thái L3 chưa đủ xác nhận.
+    // Trong các trạng thái này tuyệt đối không biến một vật cao thành "mực nước".
+    if (isMeasurementAnomalyScenario(scenario)) {
+        return {
+            active: false,
+            currentWaterCm,
+            thresholdCm,
+            rateCmMin,
+            minRiseRateCmMin,
+            nodeDifferenceCm,
+            risingEvidence,
+            measurementRejected: true,
+            basis: `Số đo đang được xác minh vì scenario=${scenario}; chưa kết luận ngập.`
+        };
+    }
+
+    // Hàng rào bổ sung cho firmware cũ: một node báo >=15 cm nhưng hai node lệch
+    // quá lớn thì chưa xác nhận ngập. Trường hợp này thường xảy ra khi có vật cản
+    // nằm dưới một cảm biến.
+    if (currentWaterCm != null
+        && currentWaterCm >= 15
+        && nodeDifferenceCm != null
+        && nodeDifferenceCm >= disagreementCm) {
+        return {
+            active: false,
+            currentWaterCm,
+            thresholdCm,
+            rateCmMin,
+            minRiseRateCmMin,
+            nodeDifferenceCm,
+            risingEvidence,
+            measurementRejected: true,
+            basis: `Mức cao ${currentWaterCm.toFixed(2)} cm nhưng hai node lệch ${nodeDifferenceCm.toFixed(2)} cm; chờ đối chiếu thay vì kết luận ngập.`
+        };
+    }
+
+    // Nếu Central đã xác nhận kịch bản ngập thì tin kết quả xử lý biên của Central.
     if (scenario.startsWith("FLOOD_")) {
         return {
             active: true,
             currentWaterCm,
             thresholdCm,
-            basis: `Central đang ở scenario ${scenario}.`
+            rateCmMin,
+            minRiseRateCmMin,
+            nodeDifferenceCm,
+            risingEvidence,
+            measurementRejected: false,
+            basis: `Central đã xác nhận scenario ${scenario}.`
         };
     }
 
-    if (currentWaterCm != null && currentWaterCm >= thresholdCm) {
+    // Fallback cho dữ liệu chưa có scenario xác nhận:
+    // chỉ coi là ngập khi mực nước vượt ngưỡng VÀ có bằng chứng đang dâng.
+    // Nhờ vậy một vật đứng yên dưới cảm biến không đủ để tạo kết luận ngập.
+    if (currentWaterCm != null
+        && currentWaterCm >= thresholdCm
+        && risingEvidence) {
         return {
             active: true,
             currentWaterCm,
             thresholdCm,
-            basis: `Mực nước ${currentWaterCm.toFixed(2)} cm >= ngưỡng ${thresholdCm.toFixed(2)} cm.`
+            rateCmMin,
+            minRiseRateCmMin,
+            nodeDifferenceCm,
+            risingEvidence,
+            measurementRejected: false,
+            basis: `Mực nước ${currentWaterCm.toFixed(2)} cm >= ${thresholdCm.toFixed(2)} cm và đang dâng ${rateCmMin.toFixed(2)} cm/phút.`
         };
     }
 
@@ -80,9 +168,16 @@ function detectFlooding(sensor = {}) {
         active: false,
         currentWaterCm,
         thresholdCm,
+        rateCmMin,
+        minRiseRateCmMin,
+        nodeDifferenceCm,
+        risingEvidence,
+        measurementRejected: false,
         basis: currentWaterCm == null
             ? "Chưa có mực nước hợp lệ để xác nhận ngập."
-            : `Mực nước ${currentWaterCm.toFixed(2)} cm < ngưỡng ${thresholdCm.toFixed(2)} cm.`
+            : currentWaterCm < thresholdCm
+                ? `Mực nước ${currentWaterCm.toFixed(2)} cm < ngưỡng ${thresholdCm.toFixed(2)} cm.`
+                : "Mực nước đã cao nhưng chưa có bằng chứng dâng đủ để xác nhận ngập."
     };
 }
 
@@ -239,6 +334,11 @@ function classifyFloodCause({ sensor = {}, tide = null } = {}) {
             scenario: normalizeScenario(sensor.scenario) || null,
             current_water_cm: flood.currentWaterCm,
             flood_threshold_cm: flood.thresholdCm,
+            rate_cm_min: flood.rateCmMin,
+            min_rise_rate_cm_min: flood.minRiseRateCmMin,
+            rising_evidence: flood.risingEvidence,
+            node_difference_cm: flood.nodeDifferenceCm,
+            measurement_rejected: Boolean(flood.measurementRejected),
             raining,
             tide_high_window: tideHigh.active,
             tide_within_time_window: tideHigh.withinWindow,
@@ -261,5 +361,6 @@ module.exports = {
     classifyFloodCause,
     detectFlooding,
     getTideHighEvidence,
-    tideRiskBandForLevel
+    tideRiskBandForLevel,
+    isMeasurementAnomalyScenario
 };
