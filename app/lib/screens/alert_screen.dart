@@ -57,6 +57,38 @@ class AlertScreen extends StatelessWidget {
   }
 
 
+  bool _measurementUncertain(Map<String, dynamic> latest) {
+    final scenario = latest['scenario']?.toString().toUpperCase() ?? '';
+    if (scenario == 'OBSTRUCTION_SUSPECTED' ||
+        scenario == 'TRANSIENT_ANOMALY' ||
+        scenario == 'LEVEL_PENDING') {
+      return true;
+    }
+
+    final max = double.tryParse(latest['max_water_level']?.toString() ?? '');
+    final n1 = double.tryParse(latest['node1_water_level']?.toString() ?? '');
+    final n2 = double.tryParse(latest['node2_water_level']?.toString() ?? '');
+
+    return max != null &&
+        max >= 15 &&
+        n1 != null &&
+        n2 != null &&
+        (n1 - n2).abs() >= 5.0;
+  }
+
+  double? _trustedWater(Map<String, dynamic> latest) {
+    final max = double.tryParse(latest['max_water_level']?.toString() ?? '');
+    if (!_measurementUncertain(latest)) return max;
+
+    final n1 = double.tryParse(latest['node1_water_level']?.toString() ?? '');
+    final n2 = double.tryParse(latest['node2_water_level']?.toString() ?? '');
+
+    if (n1 != null && n2 != null) {
+      return n1 <= n2 ? n1 : n2;
+    }
+    return null;
+  }
+
   @override
   Widget build(BuildContext context) {
     final deployed = sites.map(_site).where(_deployed).toList();
