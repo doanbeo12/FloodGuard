@@ -1,6 +1,10 @@
 const { pool } = require("./db");
 const { getSiteTideSummary } = require("./tide-service");
-const { classifyFloodCause, getTideHighEvidence } = require("./flood-cause");
+const {
+    classifyFloodCause,
+    getTideHighEvidence,
+    isMeasurementAnomalyScenario
+} = require("./flood-cause");
 
 const CENTRAL_TIMEOUT_MS = Number(process.env.CENTRAL_TIMEOUT_MS || 20000);
 
@@ -21,6 +25,7 @@ function connectionStatus(recordedAt) {
 
 function sensorWarningLevel(sensor, fresh) {
     if (!fresh) return 0;
+    if (isMeasurementAnomalyScenario(sensor.scenario)) return 0;
 
     const alert = Number(sensor.alert_level || 0);
     let level = 0;
@@ -75,6 +80,7 @@ function buildCombinedWarning({ sensor = {}, tide = null, connection_status = nu
     const trend = fresh ? String(sensor.trend || "UNKNOWN") : "UNKNOWN";
     const rising = trend === "RISING" || trend === "RISING_FAST";
     const monitoringDegraded = fresh && boolValue(sensor.monitoring_degraded);
+    const measurementUncertain = fresh && isMeasurementAnomalyScenario(sensor.scenario);
 
     const factors = [];
     if (!fresh) factors.push("CENTRAL_OFFLINE");
@@ -83,6 +89,7 @@ function buildCombinedWarning({ sensor = {}, tide = null, connection_status = nu
     if (rising) factors.push("WATER_RISING");
     if (earlyWarning) factors.push("SENSOR_EARLY_WARNING");
     if (monitoringDegraded) factors.push("MONITORING_DEGRADED");
+    if (measurementUncertain) factors.push("MEASUREMENT_RECHECK");
     if (tideEvidence.active) factors.push("TIDE_HIGH");
 
     let level = Math.max(sensorLevel, tideLevel);
@@ -99,6 +106,13 @@ function buildCombinedWarning({ sensor = {}, tide = null, connection_status = nu
         message = tideLevel > 0
             ? `Không có dữ liệu cảm biến realtime. ${tideDescription(tideEvidence)}`
             : "Không có dữ liệu mới từ Central nên không thể đánh giá mực nước hiện tại.";
+    } else if (measurementUncertain) {
+        level = Math.max(tideLevel, 1);
+        code = tideLevel > 0 ? "MEASUREMENT_RECHECK_TIDE" : "MEASUREMENT_RECHECK";
+        label = tideLevel > 0
+            ? "Đang xác minh số đo • theo dõi triều"
+            : "Đang xác minh số đo";
+        message = "Số đo cao chưa được xác nhận là mực nước thực tế; hệ thống tiếp tục đối chiếu hai node và xu hướng dâng.";
     } else if (floodCause.flooding_detected) {
         if (floodCause.code === "RAIN_TIDE") {
             code = "FLOOD_RAIN_TIDE";
@@ -160,6 +174,7 @@ function buildCombinedWarning({ sensor = {}, tide = null, connection_status = nu
             trend,
             rate_cm_min: finiteOrNull(sensor.rate_cm_min),
             monitoring_degraded: monitoringDegraded,
+            measurement_uncertain: measurementUncertain,
             raining
         },
         tide: {
