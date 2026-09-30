@@ -327,20 +327,8 @@ class _SiteDetailScreenState extends State<SiteDetailScreen> {
   ) {
     final severity = warning['severity']?.toString() ?? 'NORMAL';
     final color = combinedWarningColor(severity);
-    final label = warning['label']?.toString() ?? 'Chưa có phân tích';
-    final message = warning['message']?.toString() ?? '';
+    final label = warning['label']?.toString() ?? 'Bình thường';
     final active = warning['active'] == true;
-
-    final tideRaw = warning['tide'];
-    final tide = tideRaw is Map
-        ? Map<String, dynamic>.from(tideRaw)
-        : <String, dynamic>{};
-    final tideLevel = _toDouble(tide['level_m']);
-    final riskRaw = tide['risk_band'];
-    final risk = riskRaw is Map
-        ? Map<String, dynamic>.from(riskRaw)
-        : <String, dynamic>{};
-    final riskLabel = risk['label']?.toString();
 
     return Container(
       width: double.infinity,
@@ -352,80 +340,58 @@ class _SiteDetailScreenState extends State<SiteDetailScreen> {
           color: color.withValues(alpha: 0.28),
         ),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      child: Row(
         children: [
-          Row(
-            children: [
-              Icon(
-                active
-                    ? Icons.warning_amber_rounded
-                    : Icons.verified_outlined,
-                color: color,
-              ),
-              const SizedBox(width: 9),
-              const Expanded(
-                child: Text(
-                  'Cảnh báo tổng hợp cảm biến + triều',
+          Icon(
+            active
+                ? Icons.warning_amber_rounded
+                : Icons.verified_outlined,
+            color: color,
+            size: 27,
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Cảnh báo tổng hợp',
                   style: TextStyle(
-                    fontSize: 15,
+                    fontSize: 13,
+                    color: Color(0xFF6B7280),
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  label,
+                  style: TextStyle(
+                    color: color,
+                    fontSize: 17,
                     fontWeight: FontWeight.bold,
                   ),
                 ),
-              ),
-              Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 9,
-                  vertical: 4,
-                ),
-                decoration: BoxDecoration(
-                  color: color.withValues(alpha: 0.13),
-                  borderRadius: BorderRadius.circular(9),
-                ),
-                child: Text(
-                  warning['severity_label']?.toString() ?? severity,
-                  style: TextStyle(
-                    color: color,
-                    fontSize: 11,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 10),
-          Text(
-            label,
-            style: TextStyle(
-              color: color,
-              fontSize: 16,
-              fontWeight: FontWeight.bold,
+              ],
             ),
           ),
-          if (message.isNotEmpty) ...[
-            const SizedBox(height: 6),
-            Text(
-              message,
-              style: const TextStyle(
-                color: Color(0xFF4B5563),
-                fontSize: 13,
-                height: 1.4,
+          Container(
+            padding: const EdgeInsets.symmetric(
+              horizontal: 9,
+              vertical: 4,
+            ),
+            decoration: BoxDecoration(
+              color: color.withValues(alpha: 0.13),
+              borderRadius: BorderRadius.circular(9),
+            ),
+            child: Text(
+              warning['severity_label']?.toString() ?? severity,
+              style: TextStyle(
+                color: color,
+                fontSize: 11,
+                fontWeight: FontWeight.w700,
               ),
             ),
-          ],
-          if (tideLevel != null) ...[
-            const SizedBox(height: 10),
-            Text(
-              'Triều dùng trong phân tích: '
-              '${tideLevel.toStringAsFixed(2)} m'
-              '${riskLabel == null ? '' : ' • $riskLabel'}',
-              style: const TextStyle(
-                color: Color(0xFF374151),
-                fontSize: 12,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ],
+          ),
         ],
       ),
     );
