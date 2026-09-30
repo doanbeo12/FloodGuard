@@ -56,56 +56,6 @@ class AlertScreen extends StatelessWidget {
     }
   }
 
-  String _tideText(Map<String, dynamic> warning) {
-    final raw = warning['tide'];
-    if (raw is! Map) return 'Không có dữ liệu triều';
-    final tide = Map<String, dynamic>.from(raw);
-    final level = double.tryParse(tide['level_m']?.toString() ?? '');
-    if (level == null) return 'Không có dữ liệu triều';
-
-    final riskRaw = tide['risk_band'];
-    final risk = riskRaw is Map
-        ? Map<String, dynamic>.from(riskRaw)
-        : <String, dynamic>{};
-    final code = risk['code']?.toString();
-
-    if (code == null || code == 'UNKNOWN') {
-      return 'Triều ${level.toStringAsFixed(2)} m';
-    }
-    return 'Triều ${level.toStringAsFixed(2)} m • $code';
-  }
-
-  bool _measurementUncertain(Map<String, dynamic> latest) {
-    final scenario = latest['scenario']?.toString().toUpperCase() ?? '';
-    if (scenario == 'OBSTRUCTION_SUSPECTED' ||
-        scenario == 'TRANSIENT_ANOMALY' ||
-        scenario == 'LEVEL_PENDING') {
-      return true;
-    }
-
-    final max = double.tryParse(latest['max_water_level']?.toString() ?? '');
-    final n1 = double.tryParse(latest['node1_water_level']?.toString() ?? '');
-    final n2 = double.tryParse(latest['node2_water_level']?.toString() ?? '');
-
-    return max != null &&
-        max >= 15 &&
-        n1 != null &&
-        n2 != null &&
-        (n1 - n2).abs() >= 5.0;
-  }
-
-  double? _trustedWater(Map<String, dynamic> latest) {
-    final max = double.tryParse(latest['max_water_level']?.toString() ?? '');
-    if (!_measurementUncertain(latest)) return max;
-
-    final n1 = double.tryParse(latest['node1_water_level']?.toString() ?? '');
-    final n2 = double.tryParse(latest['node2_water_level']?.toString() ?? '');
-
-    if (n1 != null && n2 != null) {
-      return n1 <= n2 ? n1 : n2;
-    }
-    return null;
-  }
 
   @override
   Widget build(BuildContext context) {
