@@ -236,6 +236,39 @@ class _SiteDetailScreenState extends State<SiteDetailScreen> {
     return _toDouble(value) ?? 0;
   }
 
+  bool _measurementUncertain(Map<String, dynamic> data) {
+    final scenario = data['scenario']?.toString().toUpperCase() ?? '';
+    if (scenario == 'OBSTRUCTION_SUSPECTED' ||
+        scenario == 'TRANSIENT_ANOMALY' ||
+        scenario == 'LEVEL_PENDING') {
+      return true;
+    }
+
+    final max = _toDouble(data['max_water_level']);
+    final n1 = _toDouble(data['node1_water_level']);
+    final n2 = _toDouble(data['node2_water_level']);
+
+    if (max != null && max >= 15 && n1 != null && n2 != null) {
+      return (n1 - n2).abs() >= 5.0;
+    }
+
+    return false;
+  }
+
+  double? _trustedMaxWater(Map<String, dynamic> data) {
+    final max = _toDouble(data['max_water_level']);
+    if (!_measurementUncertain(data)) return max;
+
+    final n1 = _toDouble(data['node1_water_level']);
+    final n2 = _toDouble(data['node2_water_level']);
+
+    if (n1 != null && n2 != null) {
+      return n1 <= n2 ? n1 : n2;
+    }
+
+    return null;
+  }
+
   int alertLevel(dynamic value) {
     return int.tryParse(value?.toString() ?? '0') ?? 0;
   }
@@ -952,11 +985,24 @@ class _SiteDetailScreenState extends State<SiteDetailScreen> {
         statusResult?['connection_status']?.toString() ?? 'UNKNOWN';
     final centralOnline = connectionStatus == 'ONLINE';
 
+    final combinedRaw = statusResult?['combined_warning'];
+    final combinedWarning = combinedRaw is Map
+        ? Map<String, dynamic>.from(combinedRaw)
+        : <String, dynamic>{};
+
+    final measurementUncertain = _measurementUncertain(data);
+    final combinedSeverity = combinedWarning['severity']?.toString();
     final color = centralOnline
-        ? alertColor(data['alert_level'])
+        ? (combinedSeverity == null
+            ? (measurementUncertain
+                ? const Color(0xFFEAB308)
+                : alertColor(data['alert_level']))
+            : combinedWarningColor(combinedSeverity))
         : const Color(0xFF6B7280);
 
-    final maxLevel = number(data['max_water_level']);
+    final trustedMaxLevel = _trustedMaxWater(data);
+    final maxLevelAvailable = trustedMaxLevel != null;
+    final maxLevel = trustedMaxLevel ?? 0.0;
     final node1 = number(data['node1_water_level']);
     final node2 = number(data['node2_water_level']);
     final backendRate = number(data['rate_cm_min']);
@@ -966,10 +1012,6 @@ class _SiteDetailScreenState extends State<SiteDetailScreen> {
     final raining = data['raining'] == true;
     final earlyWarning = data['early_warning'] == true;
 
-    final combinedRaw = statusResult?['combined_warning'];
-    final combinedWarning = combinedRaw is Map
-        ? Map<String, dynamic>.from(combinedRaw)
-        : <String, dynamic>{};
     final warningTideRaw = combinedWarning['tide'];
     final warningTide = warningTideRaw is Map
         ? Map<String, dynamic>.from(warningTideRaw)
@@ -997,23 +1039,30 @@ class _SiteDetailScreenState extends State<SiteDetailScreen> {
     final hasHistoryForForecast =
         historyPoints.where((p) => p.max != null).length >= 3;
 
-    final forecastPoints = centralOnline && hasHistoryForForecast
+    final forecastPoints = centralOnline &&
+            hasHistoryForForecast &&
+            maxLevelAvailable &&
+            !measurementUncertain
         ? _buildForecastPoints(maxLevel, forecastRate)
         : <ForecastPoint>[];
 
     final methodText = !centralOnline
         ? 'Central đang offline nên dự báo realtime tạm dừng.'
-        : hasHistoryForForecast
-            ? 'Dựa trên xu hướng dữ liệu mực nước trong 60 phút gần nhất.'
-            : 'Chưa đủ dữ liệu lịch sử; cần thêm dữ liệu để tạo dự báo.';
+        : measurementUncertain
+            ? 'Số đo đang được xác minh nên tạm dừng dự báo.'
+            : hasHistoryForForecast
+                ? 'Dựa trên xu hướng dữ liệu mực nước trong 60 phút gần nhất.'
+                : 'Chưa đủ dữ liệu lịch sử; cần thêm dữ liệu để tạo dự báo.';
 
     final forecastSummary = !centralOnline
         ? 'Không sử dụng lần đo cuối để tiếp tục dự báo. '
             'Dữ liệu realtime sẽ tự cập nhật khi Central online trở lại.'
-        : hasHistoryForForecast
-            ? _buildForecastSummary(maxLevel, forecastRate)
-            : 'Hiện chưa có đủ dữ liệu lịch sử để dự báo đáng tin cậy. '
-                'Hãy để hệ thống tiếp tục ghi nhận dữ liệu của Đường số 1.';
+        : measurementUncertain
+            ? 'Hệ thống đang đối chiếu hai node để loại trừ vật cản hoặc số đo bất thường.'
+            : hasHistoryForForecast
+                ? _buildForecastSummary(maxLevel, forecastRate)
+                : 'Hiện chưa có đủ dữ liệu lịch sử để dự báo đáng tin cậy. '
+                    'Hãy để hệ thống tiếp tục ghi nhận dữ liệu của Đường số 1.';
 
     return ListView(
       physics: const AlwaysScrollableScrollPhysics(),
@@ -1032,7 +1081,10 @@ class _SiteDetailScreenState extends State<SiteDetailScreen> {
             children: [
               Text(
                 centralOnline
-                    ? alertText(data['alert_level'])
+                    ? (combinedWarning['label']?.toString() ??
+                        (measurementUncertain
+                            ? 'Đang xác minh số đo'
+                            : alertText(data['alert_level'])))
                     : 'Central đang offline',
                 style: TextStyle(
                   color: color,
@@ -1042,7 +1094,7 @@ class _SiteDetailScreenState extends State<SiteDetailScreen> {
               ),
               const SizedBox(height: 7),
               Text(
-                centralOnline
+                centralOnline && maxLevelAvailable
                     ? '${maxLevel.toStringAsFixed(1)} cm'
                     : '--',
                 style: const TextStyle(
@@ -1052,7 +1104,9 @@ class _SiteDetailScreenState extends State<SiteDetailScreen> {
               ),
               Text(
                 centralOnline
-                    ? 'Mực nước lớn nhất hiện tại'
+                    ? (measurementUncertain
+                        ? 'Mực nước tin cậy sau đối chiếu'
+                        : 'Mực nước lớn nhất hiện tại')
                     : 'Không có dữ liệu realtime',
                 style: const TextStyle(
                   color: Color(0xFF6B7280),
