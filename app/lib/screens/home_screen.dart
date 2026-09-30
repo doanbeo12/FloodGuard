@@ -92,6 +92,10 @@ class _HomeScreenState extends State<HomeScreen> {
 
       final latest = site['latest'];
       if (latest == null) continue;
+      if (latest is Map &&
+          _measurementUncertain(Map<String, dynamic>.from(latest))) {
+        continue;
+      }
 
       final level =
           int.tryParse(
@@ -103,6 +107,39 @@ class _HomeScreenState extends State<HomeScreen> {
     }
 
     return false;
+  }
+
+  bool _measurementUncertain(Map<String, dynamic> latest) {
+    final scenario = latest['scenario']?.toString().toUpperCase() ?? '';
+    if (scenario == 'OBSTRUCTION_SUSPECTED' ||
+        scenario == 'TRANSIENT_ANOMALY' ||
+        scenario == 'LEVEL_PENDING') {
+      return true;
+    }
+
+    final max = double.tryParse(latest['max_water_level']?.toString() ?? '');
+    final n1 = double.tryParse(latest['node1_water_level']?.toString() ?? '');
+    final n2 = double.tryParse(latest['node2_water_level']?.toString() ?? '');
+
+    if (max != null && max >= 15 && n1 != null && n2 != null) {
+      return (n1 - n2).abs() >= 5.0;
+    }
+
+    return false;
+  }
+
+  double? _trustedWaterLevel(Map<String, dynamic> latest) {
+    final max = double.tryParse(latest['max_water_level']?.toString() ?? '');
+    if (!_measurementUncertain(latest)) return max;
+
+    final n1 = double.tryParse(latest['node1_water_level']?.toString() ?? '');
+    final n2 = double.tryParse(latest['node2_water_level']?.toString() ?? '');
+
+    if (n1 != null && n2 != null) {
+      return n1 <= n2 ? n1 : n2;
+    }
+
+    return null;
   }
 
   Color siteColor(Map<String, dynamic> site) {
@@ -127,6 +164,11 @@ class _HomeScreenState extends State<HomeScreen> {
 
     if (latest == null) {
       return const Color(0xFF6B7280);
+    }
+
+    if (latest is Map &&
+        _measurementUncertain(Map<String, dynamic>.from(latest))) {
+      return const Color(0xFFEAB308);
     }
 
     final level =
@@ -163,6 +205,11 @@ class _HomeScreenState extends State<HomeScreen> {
       return 'Chưa có dữ liệu';
     }
 
+    if (latest is Map &&
+        _measurementUncertain(Map<String, dynamic>.from(latest))) {
+      return 'Đang xác minh số đo';
+    }
+
     final level =
         int.tryParse(
           latest['alert_level']?.toString() ?? '0',
@@ -177,16 +224,14 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   String waterLevel(Map<String, dynamic> site) {
-    final latest = site['latest'];
-    if (latest == null) return '--';
+    final latestRaw = site['latest'];
+    if (latestRaw is! Map) return '--';
 
-    final value = latest['max_water_level'];
-    if (value == null) return '--';
+    final latest = Map<String, dynamic>.from(latestRaw);
+    final trusted = _trustedWaterLevel(latest);
+    if (trusted == null) return '--';
 
-    final number = double.tryParse(value.toString());
-    if (number == null) return '--';
-
-    return number.toStringAsFixed(1);
+    return trusted.toStringAsFixed(1);
   }
 
   @override
