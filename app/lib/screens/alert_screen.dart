@@ -219,9 +219,6 @@ class AlertScreen extends StatelessWidget {
     final warning = _warning(site);
     final severity = warning['severity']?.toString() ?? 'UNKNOWN';
     final color = _color(severity);
-    final factors = warning['factors'] is List
-        ? List<dynamic>.from(warning['factors'])
-        : <dynamic>[];
 
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
@@ -238,111 +235,59 @@ class AlertScreen extends StatelessWidget {
           ),
         ],
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      child: Row(
         children: [
-          Row(
-            children: [
-              Container(
-                width: 42,
-                height: 42,
-                decoration: BoxDecoration(
-                  color: color.withValues(alpha: 0.12),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Icon(_icon(severity), color: color),
-              ),
-              const SizedBox(width: 11),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      site['site_name']?.toString() ?? 'Không xác định',
-                      style: const TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      warning['severity_label']?.toString() ?? severity,
-                      style: TextStyle(
-                        color: color,
-                        fontSize: 12,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          Text(
-            warning['label']?.toString() ?? 'Cảnh báo',
-            style: TextStyle(
-              color: color,
-              fontWeight: FontWeight.bold,
-              fontSize: 15,
+          Container(
+            width: 42,
+            height: 42,
+            decoration: BoxDecoration(
+              color: color.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(12),
             ),
+            child: Icon(_icon(severity), color: color),
           ),
-          const SizedBox(height: 5),
-          Text(
-            warning['message']?.toString() ?? 'Không có mô tả chi tiết.',
-            style: const TextStyle(
-              color: Color(0xFF4B5563),
-              height: 1.4,
-            ),
-          ),
-          const SizedBox(height: 10),
-          Row(
-            children: [
-              const Icon(
-                Icons.waves_outlined,
-                size: 17,
-                color: Color(0xFF7C3AED),
-              ),
-              const SizedBox(width: 6),
-              Expanded(
-                child: Text(
-                  _tideText(warning),
+          const SizedBox(width: 11),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  site['site_name']?.toString() ?? 'Không xác định',
                   style: const TextStyle(
-                    color: Color(0xFF6B7280),
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
                   ),
                 ),
-              ),
-            ],
-          ),
-          if (factors.isNotEmpty) ...[
-            const SizedBox(height: 10),
-            Wrap(
-              spacing: 6,
-              runSpacing: 6,
-              children: factors.map((factor) {
-                return Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 8,
-                    vertical: 4,
+                const SizedBox(height: 4),
+                Text(
+                  warning['label']?.toString() ?? 'Cảnh báo',
+                  style: TextStyle(
+                    color: color,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w700,
                   ),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFF3F4F6),
-                    borderRadius: BorderRadius.circular(20),
-                  ),
-                  child: Text(
-                    factor.toString(),
-                    style: const TextStyle(
-                      color: Color(0xFF4B5563),
-                      fontSize: 10,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                );
-              }).toList(),
+                ),
+              ],
             ),
-          ],
+          ),
+          Container(
+            padding: const EdgeInsets.symmetric(
+              horizontal: 8,
+              vertical: 4,
+            ),
+            decoration: BoxDecoration(
+              color: color.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(9),
+            ),
+            child: Text(
+              warning['severity_label']?.toString() ?? severity,
+              style: TextStyle(
+                color: color,
+                fontSize: 10,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
         ],
       ),
     );
