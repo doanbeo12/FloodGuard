@@ -1,6 +1,4 @@
 import 'dart:async';
-import 'dart:math' as math;
-
 import 'package:flutter/material.dart';
 
 import '../services/api_service.dart';
@@ -278,11 +276,11 @@ class _SiteDetailScreenState extends State<SiteDetailScreen> {
       case 0:
         return 'Bình thường';
       case 1:
-        return 'Cảnh báo';
+        return 'Mực nước bắt đầu cao';
       case 2:
-        return 'Nguy cơ cao';
+        return 'Mực nước đang cao';
       default:
-        return 'Cảnh báo ngập';
+        return 'Đang có ngập';
     }
   }
 
@@ -296,29 +294,37 @@ class _SiteDetailScreenState extends State<SiteDetailScreen> {
     return const Color(0xFF16A34A);
   }
 
-  String trendText(dynamic value) {
-    switch (value?.toString()) {
-      case 'RISING':
-        return 'Đang tăng';
-      case 'FALLING':
-        return 'Đang giảm';
-      case 'STABLE':
-        return 'Ổn định';
-      default:
-        return 'Chưa xác định';
-    }
+  String trendTextFromRate(double? rate) {
+    if (rate == null) return 'Đang cập nhật';
+    if (rate >= 0.20) return 'Đang tăng';
+    if (rate <= -0.20) return 'Đang giảm';
+    return 'Ổn định';
+  }
+
+  Color trendColorFromRate(double? rate) {
+    if (rate == null) return const Color(0xFF6B7280);
+    if (rate >= 0.20) return const Color(0xFFF97316);
+    if (rate <= -0.20) return const Color(0xFF16A34A);
+    return const Color(0xFF2563EB);
+  }
+
+  String rateText(double? rate) {
+    if (rate == null) return '--';
+    final sign = rate > 0 ? '+' : '';
+    return '${sign}${rate.toStringAsFixed(2)} cm/phút';
   }
 
   String floodCauseText(dynamic value) {
     switch (value?.toString()) {
       case 'RAIN':
-        return 'Mưa';
+        return 'Khả năng chủ yếu do mưa';
       case 'TIDE':
-        return 'Triều';
+        return 'Khả năng chủ yếu do triều';
       case 'RAIN_TIDE':
-        return 'Mưa + triều';
+        return 'Khả năng do mưa kết hợp triều';
+      case 'LOCAL_DRAINAGE':
       case 'UNKNOWN':
-        return 'Chưa xác định';
+        return 'Khả năng do thoát nước chậm hoặc ứ đọng cục bộ';
       case 'NONE':
       default:
         return 'Chưa ghi nhận ngập';
@@ -333,6 +339,7 @@ class _SiteDetailScreenState extends State<SiteDetailScreen> {
         return const Color(0xFF7C3AED);
       case 'RAIN_TIDE':
         return const Color(0xFFDC2626);
+      case 'LOCAL_DRAINAGE':
       case 'UNKNOWN':
         return const Color(0xFFF97316);
       case 'NONE':
@@ -448,6 +455,144 @@ class _SiteDetailScreenState extends State<SiteDetailScreen> {
     if (time == null) return '--/--';
     return '${_twoDigits(time.day)}/${_twoDigits(time.month)}';
   }
+
+  String _nextTidePeakText(Map<String, dynamic> tide) {
+    final raw = tide['next_high'];
+    if (raw is! Map) return 'Đang cập nhật dự báo triều';
+
+    final nextHigh = Map<String, dynamic>.from(raw);
+    final level = _toDouble(nextHigh['level_m']);
+    final time = nextHigh['time']?.toString();
+    final date = nextHigh['date']?.toString();
+
+    if (level == null) return 'Đang cập nhật dự báo triều';
+
+    var when = '';
+    if (time != null && time.isNotEmpty) {
+      final shortTime = time.length >= 5 ? time.substring(0, 5) : time;
+      when = shortTime;
+    }
+
+    if (date != null && date.length >= 10) {
+      final dateText = '${date.substring(8, 10)}/${date.substring(5, 7)}';
+      when = when.isEmpty ? dateText : '$when • $dateText';
+    }
+
+    return when.isEmpty
+        ? 'Đỉnh tiếp theo: ${level.toStringAsFixed(2)} m'
+        : 'Đỉnh tiếp theo: ${level.toStringAsFixed(2)} m • $when';
+  }
+
+  Map<String, dynamic>? _nextHourWeather() {
+    if (weatherHours.isEmpty) return null;
+
+    final now = DateTime.now();
+    for (final item in weatherHours) {
+      final time = _weatherDateTime(item['time']);
+      if (time != null && !time.isBefore(now)) {
+        return item;
+      }
+    }
+
+    return weatherHours.first;
+  }
+
+  int? _forecastRainProbability(Map<String, dynamic>? weather) {
+    if (weather == null) return null;
+    final value = _toDouble(weather['rain_probability']);
+    return value?.round();
+  }
+
+  double? _forecastRainMm(Map<String, dynamic>? weather) {
+    if (weather == null) return null;
+    return _toDouble(weather['rain_mm']);
+  }
+
+  bool _heavyRainExpected(Map<String, dynamic>? weather) {
+    if (weather == null) return false;
+    final probability = _forecastRainProbability(weather);
+    final rainMm = _forecastRainMm(weather) ?? 0;
+    final condition = weather['condition']?.toString();
+
+    return rainMm >= 5 ||
+        (probability != null && probability >= 80) ||
+        condition == 'HEAVY_RAIN' ||
+        condition == 'THUNDERSTORM';
+  }
+
+  bool _rainExpected(Map<String, dynamic>? weather) {
+    if (weather == null) return false;
+    final probability = _forecastRainProbability(weather);
+    final rainMm = _forecastRainMm(weather) ?? 0;
+    final condition = weather['condition']?.toString();
+
+    return rainMm >= 0.5 ||
+        (probability != null && probability >= 50) ||
+        condition == 'DRIZZLE' ||
+        condition == 'RAIN' ||
+        condition == 'HEAVY_RAIN' ||
+        condition == 'THUNDERSTORM';
+  }
+
+  String _forecastAssessment(
+    double? rate,
+    Map<String, dynamic>? weather,
+  ) {
+    final heavyRain = _heavyRainExpected(weather);
+    final rainExpected = _rainExpected(weather);
+
+    if (rate == null) {
+      if (heavyRain) return 'Có khả năng tăng';
+      if (rainExpected) return 'Có thể tăng nhẹ';
+      return 'Khả năng ổn định';
+    }
+
+    if (rate >= 0.20) {
+      if (heavyRain) return 'Có khả năng tiếp tục tăng';
+      if (rainExpected) return 'Có khả năng tăng';
+      return 'Có thể tăng chậm rồi ổn định';
+    }
+
+    if (rate <= -0.20) {
+      if (heavyRain) return 'Có thể giảm chậm hoặc tăng lại';
+      if (rainExpected) return 'Có khả năng giảm chậm';
+      return 'Có khả năng tiếp tục giảm';
+    }
+
+    if (heavyRain) return 'Có khả năng tăng';
+    if (rainExpected) return 'Có thể tăng nhẹ';
+    return 'Khả năng ổn định';
+  }
+
+  String _forecastSummary(
+    double? rate,
+    Map<String, dynamic>? weather,
+    bool measurementUncertain,
+  ) {
+    if (measurementUncertain) {
+      return 'Số đo hiện tại đang được kiểm tra nên tạm thời chưa dùng để đánh giá mực nước trong 1 giờ tới.';
+    }
+
+    if (weather == null) {
+      return 'Dự báo thời tiết đang được cập nhật. Hệ thống tạm dùng tốc độ mực nước hiện tại để đánh giá xu hướng ngắn hạn.';
+    }
+
+    final probability = _forecastRainProbability(weather);
+    final rainMm = _forecastRainMm(weather);
+    final assessment = _forecastAssessment(rate, weather);
+
+    final rainText = probability == null && rainMm == null
+        ? 'Dự báo mưa đang được cập nhật'
+        : 'Khả năng mưa ${probability == null ? '--' : '$probability%'}'
+            ', lượng mưa khoảng ${rainMm == null ? '--' : '${rainMm.toStringAsFixed(1)} mm'}';
+
+    final speedText = rate == null
+        ? 'tốc độ mực nước đang được cập nhật'
+        : 'tốc độ hiện tại ${rateText(rate)}';
+
+    return '$rainText; $speedText. Trong 1 giờ tới: $assessment.';
+  }
+
 
   IconData _weatherIcon(dynamic condition) {
     switch (condition?.toString()) {
@@ -687,7 +832,7 @@ class _SiteDetailScreenState extends State<SiteDetailScreen> {
               scrollDirection: Axis.horizontal,
               padding: const EdgeInsets.symmetric(horizontal: 14),
               itemCount: weatherHours.length,
-              separatorBuilder: (_, __) => const SizedBox(width: 9),
+              separatorBuilder: (_, _) => const SizedBox(width: 9),
               itemBuilder: (context, index) {
                 final item = weatherHours[index];
                 final condition = item['condition'];
@@ -789,171 +934,6 @@ class _SiteDetailScreenState extends State<SiteDetailScreen> {
     );
   }
 
-  // Ước lượng tốc độ thay đổi bằng hồi quy tuyến tính
-  // trên các điểm max_water_level trong 60 phút gần nhất.
-  // Nếu thiếu dữ liệu, dùng rate_cm_min từ backend.
-  double _forecastRate(double backendRate) {
-    final valid = historyPoints
-        .where((p) => p.max != null)
-        .toList();
-
-    if (valid.length < 3) {
-      return backendRate;
-    }
-
-    final endTime = valid.last.time;
-    final windowStart = endTime.subtract(
-      const Duration(minutes: 60),
-    );
-
-    final recent = valid
-        .where((p) => !p.time.isBefore(windowStart))
-        .toList();
-
-    if (recent.length < 3) {
-      return backendRate;
-    }
-
-    final xValues = recent.map(
-      (p) => p.time
-          .difference(recent.first.time)
-          .inSeconds
-          .toDouble() / 60.0,
-    );
-
-    final yValues = recent
-        .map((p) => p.max!)
-        .toList();
-
-    final xMean =
-        xValues.reduce((a, b) => a + b) / xValues.length;
-
-    final yMean =
-        yValues.reduce((a, b) => a + b) / yValues.length;
-
-    double numerator = 0;
-    double denominator = 0;
-
-    for (int i = 0; i < xValues.length; i++) {
-      final dx = xValues.elementAt(i) - xMean;
-      final dy = yValues[i] - yMean;
-      numerator += dx * dy;
-      denominator += dx * dx;
-    }
-
-    if (denominator == 0) {
-      return backendRate;
-    }
-
-    final slope = numerator / denominator;
-
-    // Không dùng slope cực đoan do một điểm lỗi để dự báo demo.
-    if (!slope.isFinite || slope.abs() > 5) {
-      return backendRate;
-    }
-
-    return slope;
-  }
-
-  int _forecastAlertLevel(double level) {
-    if (level >= 15) return 3;
-    if (level >= 10) return 2;
-    if (level >= 7) return 1;
-    return 0;
-  }
-
-  String _forecastStatus(double level) {
-    if (level >= 15) return 'Ngập';
-    if (level >= 10) return 'Nguy cơ cao';
-    if (level >= 7) return 'Cảnh báo';
-    if (level >= 3) return 'Theo dõi';
-    return 'Bình thường';
-  }
-
-  String _buildForecastSummary(
-    double current,
-    double rate,
-  ) {
-    if (rate.abs() < 0.01) {
-      return 'Mực nước hiện tại khoảng '
-          '${current.toStringAsFixed(1)} cm và xu hướng gần như ổn định. '
-          'Trong 1 giờ tới chưa dự kiến có thay đổi đáng kể nếu xu hướng này tiếp tục.';
-    }
-
-    if (rate < 0) {
-      return 'Mực nước đang có xu hướng giảm khoảng '
-          '${rate.abs().toStringAsFixed(3)} cm/phút. '
-          'Trong 1 giờ tới mực nước dự kiến tiếp tục giảm nếu điều kiện hiện tại không thay đổi.';
-    }
-
-    final candidates = <Map<String, dynamic>>[];
-
-    for (final threshold in [3.0, 7.0, 10.0, 15.0]) {
-      if (threshold <= current) continue;
-
-      final minutes =
-          (threshold - current) / rate;
-
-      if (minutes >= 0 && minutes <= 60) {
-        candidates.add({
-          'threshold': threshold,
-          'minutes': minutes,
-        });
-      }
-    }
-
-    if (candidates.isNotEmpty) {
-      final first = candidates.first;
-
-      return 'Mực nước đang tăng khoảng '
-          '${rate.toStringAsFixed(3)} cm/phút. '
-          'Theo xu hướng hiện tại, có thể đạt '
-          '${(first['threshold'] as double).toStringAsFixed(0)} cm '
-          'sau khoảng '
-          '${(first['minutes'] as double).round()} phút.';
-    }
-
-    final levelIn60 = math.max(
-      0,
-      current + rate * 60,
-    );
-
-    if (levelIn60 >= 15) {
-      return 'Mực nước có xu hướng tăng. '
-          'Nếu xu hướng tiếp tục trong 1 giờ, '
-          'mực nước có thể tiến đến khoảng '
-          '${levelIn60.toStringAsFixed(1)} cm, '
-          'vượt ngưỡng 15 cm.';
-    }
-
-    return 'Mực nước đang tăng khoảng '
-        '${rate.toStringAsFixed(3)} cm/phút. '
-        'Trong 1 giờ tới có thể đạt khoảng '
-        '${levelIn60.toStringAsFixed(1)} cm nếu xu hướng tiếp tục.';
-  }
-
-  List<ForecastPoint> _buildForecastPoints(
-  double current,
-  double rate,
-) {
-  const minutesList = [15, 30, 45, 60];
-
-  return minutesList.map((minutes) {
-    final double level = math.max(
-      0.0,
-      current + rate * minutes,
-    ).toDouble();
-
-    final alert = _forecastAlertLevel(level);
-
-    return ForecastPoint(
-      minutes: minutes,
-      waterLevel: level,
-      alertLevel: alert,
-      status: _forecastStatus(level),
-    );
-  }).toList();
-}
 
   @override
   Widget build(BuildContext context) {
@@ -1005,64 +985,50 @@ class _SiteDetailScreenState extends State<SiteDetailScreen> {
     final maxLevel = trustedMaxLevel ?? 0.0;
     final node1 = number(data['node1_water_level']);
     final node2 = number(data['node2_water_level']);
-    final backendRate = number(data['rate_cm_min']);
-
-    final forecastRate = _forecastRate(backendRate);
+    final backendRate = _toDouble(data['rate_cm_min']);
 
     final raining = data['raining'] == true;
     final earlyWarning = data['early_warning'] == true;
 
-    final warningTideRaw = combinedWarning['tide'];
-    final warningTide = warningTideRaw is Map
-        ? Map<String, dynamic>.from(warningTideRaw)
+    final tideRaw = statusResult?['tide'];
+    final tide = tideRaw is Map
+        ? Map<String, dynamic>.from(tideRaw)
         : <String, dynamic>{};
-    final tideLevelForWarning = _toDouble(warningTide['level_m']);
-    final tideRiskRaw = warningTide['risk_band'];
-    final tideRisk = tideRiskRaw is Map
-        ? Map<String, dynamic>.from(tideRiskRaw)
-        : <String, dynamic>{};
-    final tideRiskCode =
-        tideRisk['code']?.toString() ?? 'UNKNOWN';
+    final tidePeakText = _nextTidePeakText(tide);
 
-    // flood_cause được Backend trả ở cấp ngoài cùng của /status.
-    // Có fallback sang data để app vẫn tương thích nếu backend thay đổi vị trí field.
     final floodCauseCode =
         statusResult?['flood_cause']?.toString() ??
         data['flood_cause']?.toString() ??
         'NONE';
 
-    final floodCauseLabel =
+    final backendCauseLabel =
         statusResult?['flood_cause_label']?.toString() ??
-        data['flood_cause_label']?.toString() ??
-        floodCauseText(floodCauseCode);
+        data['flood_cause_label']?.toString();
 
-    final hasHistoryForForecast =
-        historyPoints.where((p) => p.max != null).length >= 3;
+    final floodCauseLabel =
+        floodCauseCode == 'UNKNOWN'
+            ? floodCauseText('LOCAL_DRAINAGE')
+            : (backendCauseLabel == null || backendCauseLabel.isEmpty
+                ? floodCauseText(floodCauseCode)
+                : backendCauseLabel);
 
-    final forecastPoints = centralOnline &&
-            hasHistoryForForecast &&
-            maxLevelAvailable &&
-            !measurementUncertain
-        ? _buildForecastPoints(maxLevel, forecastRate)
-        : <ForecastPoint>[];
-
-    final methodText = !centralOnline
-        ? 'Central đang offline nên dự báo realtime tạm dừng.'
+    final nextHourWeather = _nextHourWeather();
+    final forecastAssessment = !centralOnline
+        ? 'Tạm dừng khi thiết bị mất kết nối'
         : measurementUncertain
-            ? 'Số đo đang được xác minh nên tạm dừng dự báo.'
-            : hasHistoryForForecast
-                ? 'Dựa trên xu hướng dữ liệu mực nước trong 60 phút gần nhất.'
-                : 'Chưa đủ dữ liệu lịch sử; cần thêm dữ liệu để tạo dự báo.';
+            ? 'Đang kiểm tra số đo'
+            : _forecastAssessment(backendRate, nextHourWeather);
 
     final forecastSummary = !centralOnline
-        ? 'Không sử dụng lần đo cuối để tiếp tục dự báo. '
-            'Dữ liệu realtime sẽ tự cập nhật khi Central online trở lại.'
-        : measurementUncertain
-            ? 'Hệ thống đang đối chiếu hai node để loại trừ vật cản hoặc số đo bất thường.'
-            : hasHistoryForForecast
-                ? _buildForecastSummary(maxLevel, forecastRate)
-                : 'Hiện chưa có đủ dữ liệu lịch sử để dự báo đáng tin cậy. '
-                    'Hãy để hệ thống tiếp tục ghi nhận dữ liệu của Đường số 1.';
+        ? 'Không có dữ liệu mực nước mới nên tạm dừng đánh giá 1 giờ tới.'
+        : _forecastSummary(
+            backendRate,
+            nextHourWeather,
+            measurementUncertain,
+          );
+
+    const methodText =
+        'Đánh giá dựa trên tốc độ mực nước hiện tại kết hợp dự báo mưa trong giờ tới, không ngoại suy tuyến tính mực nước.';
 
     return ListView(
       physics: const AlwaysScrollableScrollPhysics(),
@@ -1188,16 +1154,18 @@ class _SiteDetailScreenState extends State<SiteDetailScreen> {
               child: _metricCard(
                 title: 'Xu hướng',
                 value: centralOnline
-                    ? trendText(data['trend'])
-                    : 'Không xác định',
-                icon: centralOnline
-                    ? Icons.trending_up
-                    : Icons.pause_circle_outline,
-                color: !centralOnline
-                    ? const Color(0xFF6B7280)
-                    : forecastRate > 0
-                        ? const Color(0xFFF97316)
-                        : const Color(0xFF16A34A),
+                    ? trendTextFromRate(backendRate)
+                    : 'Tạm dừng',
+                icon: !centralOnline
+                    ? Icons.pause_circle_outline
+                    : backendRate != null && backendRate >= 0.20
+                        ? Icons.trending_up
+                        : backendRate != null && backendRate <= -0.20
+                            ? Icons.trending_down
+                            : Icons.trending_flat,
+                color: centralOnline
+                    ? trendColorFromRate(backendRate)
+                    : const Color(0xFF6B7280),
               ),
             ),
           ],
@@ -1209,7 +1177,7 @@ class _SiteDetailScreenState extends State<SiteDetailScreen> {
           icon: Icons.speed,
           title: 'Tốc độ thay đổi',
           value: centralOnline
-              ? '${backendRate.toStringAsFixed(3)} cm/phút'
+              ? rateText(backendRate)
               : '--',
         ),
 
@@ -1233,7 +1201,7 @@ class _SiteDetailScreenState extends State<SiteDetailScreen> {
           title: 'Nguyên nhân ngập',
           value: centralOnline
               ? floodCauseLabel
-              : 'Không xác định khi Central offline',
+              : 'Tạm dừng đánh giá khi mất kết nối',
           valueColor: centralOnline
               ? floodCauseColor(floodCauseCode)
               : Colors.grey,
@@ -1242,13 +1210,8 @@ class _SiteDetailScreenState extends State<SiteDetailScreen> {
         _infoRow(
           icon: Icons.waves_outlined,
           title: 'Triều trong phân tích',
-          value: tideLevelForWarning == null
-              ? 'Chưa có dữ liệu'
-              : '${tideLevelForWarning.toStringAsFixed(2)} m • '
-                  '$tideRiskCode',
-          valueColor: warningTide['contributing'] == true
-              ? const Color(0xFF7C3AED)
-              : Colors.grey,
+          value: tidePeakText,
+          valueColor: const Color(0xFF7C3AED),
         ),
 
         _infoRow(
@@ -1311,8 +1274,11 @@ class _SiteDetailScreenState extends State<SiteDetailScreen> {
 
         centralOnline
             ? ForecastCard(
-                points: forecastPoints,
-                rateCmMin: forecastRate,
+                assessment: forecastAssessment,
+                rateCmMin: backendRate,
+                rainProbability:
+                    _forecastRainProbability(nextHourWeather),
+                rainMm: _forecastRainMm(nextHourWeather),
                 methodText: methodText,
                 summary: forecastSummary,
               )
@@ -1386,7 +1352,7 @@ class _SiteDetailScreenState extends State<SiteDetailScreen> {
 
         historyLoading
             ? const SizedBox(
-                height: 280,
+                height: 320,
                 child: Center(
                   child: CircularProgressIndicator(),
                 ),
@@ -1398,7 +1364,7 @@ class _SiteDetailScreenState extends State<SiteDetailScreen> {
         const SizedBox(height: 12),
 
         const Text(
-          'Biểu đồ gồm dữ liệu Node 1, Node 2 và mực nước lớn nhất được backend lưu lại trong 6 giờ gần nhất.',
+          'Biểu đồ chỉ hiển thị mực nước Node 1 và Node 2 trong 6 giờ gần nhất để dễ theo dõi diễn biến tại từng điểm đo.',
           style: TextStyle(
             color: Color(0xFF6B7280),
             fontSize: 12,
