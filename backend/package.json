@@ -1,8 +1,8 @@
 {
   "name": "flood-monitoring-backend",
-  "version": "1.7.0",
+  "version": "1.10.0",
   "private": true,
-  "description": "MQTT + MySQL + Multi-Site API + site-specific tide + flood-cause classification + sensor early warning",
+  "description": "MQTT + MySQL + Multi-Site API + tide-aware warning + empirical one-hour water forecast",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
