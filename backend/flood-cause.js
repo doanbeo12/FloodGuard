@@ -74,10 +74,8 @@ function detectFlooding(sensor = {}) {
         ? Math.abs(node1WaterCm - node2WaterCm)
         : null;
 
-    const risingTrend = trend === "RISING" || trend === "RISING_FAST";
     const risingEvidence = rateCmMin != null
-        && rateCmMin >= minRiseRateCmMin
-        && (risingTrend || earlyWarning);
+        && rateCmMin >= minRiseRateCmMin;
 
     // Không dùng giá trị còn sót lại khi mất toàn bộ phép đo.
     if (scenario === "SENSOR_FAULT" || scenario === "NODES_OFFLINE") {
@@ -317,9 +315,9 @@ function classifyFloodCause({ sensor = {}, tide = null } = {}) {
         } else {
             // Fallback an toàn: không ép một trận ngập vào mưa hoặc triều khi cả hai
             // tín hiệu đều không đủ. Frontend có thể hiển thị "Chưa xác định".
-            code = "UNKNOWN";
-            label = "Chưa xác định";
-            basis = "Đang có ngập nhưng chưa đủ bằng chứng để quy về mưa hoặc triều.";
+            code = "LOCAL_DRAINAGE";
+            label = "Khả năng do thoát nước chậm hoặc ứ đọng cục bộ";
+            basis = "Đang có ngập nhưng không ghi nhận mưa và triều chưa ở vùng đóng góp; nguyên nhân sơ bộ được xếp vào khả năng thoát nước chậm hoặc ứ đọng cục bộ.";
         }
     }
 
