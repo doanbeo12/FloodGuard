@@ -212,7 +212,6 @@ function buildOneHourWaterForecast({
         );
     }
 
-    const tideInput = tideFactor(tide);
     if (tideInput.levelM != null && tideInput.minutesFromHigh != null) {
         summaryParts.push(
             `đỉnh triều kế tiếp ${tideInput.levelM.toFixed(2)} m trong khoảng ${Math.max(0, Math.round(tideInput.minutesFromHigh))} phút`
