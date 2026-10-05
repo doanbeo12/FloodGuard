@@ -8,10 +8,11 @@ const { refreshTideData, getHcmcTideSummary, getSiteTideSummary, startTideSchedu
 const { getEarlyWarningSummary, buildCombinedWarning } = require("./early-warning");
 const { getHcmcWeather, getHourlyWeather } = require("./weather-service");
 const { classifyFloodCause } = require("./flood-cause");
+const { buildOneHourWaterForecast } = require("./water-forecast");
 
 const app = express();
 const PORT = Number(process.env.PORT || 3001);
-const API_VERSION = "1.9.0-user-friendly-alerts";
+const API_VERSION = "1.10.0-empirical-water-forecast";
 const CENTRAL_TIMEOUT_MS = Number(process.env.CENTRAL_TIMEOUT_MS || 20000);
 
 app.use(cors());
@@ -105,6 +106,29 @@ function formatSiteSummary(row) {
             early_warning: boolOrFalse(row.early_warning)
         } : null
     };
+}
+
+async function getOneHourForecastForSite(site, sensor, tide, status) {
+    const latitude = numberOrNull(site.latitude) ?? Number(process.env.WEATHER_LAT || 10.7769);
+    const longitude = numberOrNull(site.longitude) ?? Number(process.env.WEATHER_LON || 106.7009);
+
+    let weather = null;
+    try {
+        weather = await getHourlyWeather({
+            lat: latitude,
+            lon: longitude,
+            hours: 2
+        });
+    } catch (_) {
+        weather = null;
+    }
+
+    return buildOneHourWaterForecast({
+        sensor,
+        weather,
+        tide,
+        connectionStatus: status
+    });
 }
 
 app.get("/api/health", async (req, res) => {
@@ -253,6 +277,13 @@ app.get("/api/sites/:id/status", async (req, res) => {
             connection_status: currentConnectionStatus
         });
 
+        const oneHourForecast = await getOneHourForecastForSite(
+            site,
+            row,
+            tide,
+            currentConnectionStatus
+        );
+
         res.json({
             site: {
                 site_id: site.site_id,
@@ -269,6 +300,7 @@ app.get("/api/sites/:id/status", async (req, res) => {
             flood_cause_label: floodCause.label,
             flood_cause_detail: floodCause,
             combined_warning: combinedWarning,
+            water_forecast_1h: oneHourForecast,
             status: "ACTIVE",
             connection_status: currentConnectionStatus,
             data: {
@@ -297,6 +329,62 @@ app.get("/api/sites/:id/status", async (req, res) => {
     }
 });
 
+
+app.get("/api/sites/:id/forecast", async (req, res) => {
+    try {
+        const siteId = parseSiteId(req.params.id);
+        if (!siteId) return res.status(400).json({ error: "site_id không hợp lệ" });
+
+        const [sites] = await pool.execute(
+            `SELECT site_id, site_name, street_name, latitude, longitude, tide_station
+             FROM monitoring_sites
+             WHERE site_id = ?
+             LIMIT 1`,
+            [siteId]
+        );
+        if (!sites.length) return res.status(404).json({ error: "Không tìm thấy địa điểm" });
+
+        const [rows] = await pool.execute(
+            `SELECT recorded_at, node1_water_level, node2_water_level, max_water_level,
+                    scenario, rate_cm_min, raining, early_warning
+             FROM sensor_readings
+             WHERE site_id = ?
+             ORDER BY recorded_at DESC, id DESC
+             LIMIT 1`,
+            [siteId]
+        );
+
+        if (!rows.length) {
+            return res.json({
+                available: false,
+                horizon_minutes: 60,
+                message: "Chưa có dữ liệu cảm biến để dự báo."
+            });
+        }
+
+        const site = sites[0];
+        const row = rows[0];
+        const status = connectionStatus(row.recorded_at);
+
+        let tide = null;
+        try {
+            tide = await getSiteTideSummary(site.site_id, site.tide_station);
+        } catch (_) {
+            tide = null;
+        }
+
+        const forecast = await getOneHourForecastForSite(site, row, tide, status);
+        res.json({
+            site: {
+                site_id: site.site_id,
+                site_name: site.site_name
+            },
+            ...forecast
+        });
+    } catch (error) {
+        res.status(500).json({ available: false, error: error.message });
+    }
+});
 
 app.get("/api/sites/:id/tide", async (req, res) => {
     try {
