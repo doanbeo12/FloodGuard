@@ -23,7 +23,7 @@ class HistoryChart extends StatelessWidget {
   const HistoryChart({
     super.key,
     required this.points,
-    this.height = 280,
+    this.height = 320,
   });
 
   @override
@@ -33,8 +33,9 @@ class HistoryChart extends StatelessWidget {
         height: height,
         alignment: Alignment.center,
         decoration: BoxDecoration(
-          color: const Color(0xFFF8FAFC),
+          color: Colors.white,
           borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: const Color(0xFFE5E7EB)),
         ),
         child: const Column(
           mainAxisSize: MainAxisSize.min,
@@ -59,10 +60,11 @@ class HistoryChart extends StatelessWidget {
 
     return Container(
       height: height,
-      padding: const EdgeInsets.fromLTRB(8, 16, 16, 8),
+      padding: const EdgeInsets.fromLTRB(8, 14, 12, 8),
       decoration: BoxDecoration(
-        color: const Color(0xFFF8FAFC),
+        color: Colors.white,
         borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFFE5E7EB)),
       ),
       child: CustomPaint(
         painter: _HistoryChartPainter(points),
@@ -79,16 +81,15 @@ class _HistoryChartPainter extends CustomPainter {
 
   static const Color node1Color = Color(0xFF2563EB);
   static const Color node2Color = Color(0xFF7C3AED);
-  static const Color maxColor = Color(0xFFF97316);
   static const Color gridColor = Color(0xFFE2E8F0);
   static const Color labelColor = Color(0xFF64748B);
 
   @override
   void paint(Canvas canvas, Size size) {
-    const leftPad = 42.0;
-    const rightPad = 8.0;
-    const topPad = 18.0;
-    const bottomPad = 36.0;
+    const leftPad = 48.0;
+    const rightPad = 10.0;
+    const topPad = 34.0;
+    const bottomPad = 42.0;
 
     final chartRect = Rect.fromLTWH(
       leftPad,
@@ -101,7 +102,6 @@ class _HistoryChartPainter extends CustomPainter {
     for (final point in points) {
       if (point.node1 != null) values.add(point.node1!);
       if (point.node2 != null) values.add(point.node2!);
-      if (point.max != null) values.add(point.max!);
     }
 
     if (values.isEmpty) return;
@@ -116,7 +116,7 @@ class _HistoryChartPainter extends CustomPainter {
       yMax = yMin + 1;
     }
 
-    final padding = (yMax - yMin) * 0.12;
+    final padding = (yMax - yMin) * 0.16;
     yMin = math.max(0, yMin - padding);
     yMax += padding;
 
@@ -126,15 +126,25 @@ class _HistoryChartPainter extends CustomPainter {
 
     final axisTextStyle = const TextStyle(
       color: labelColor,
-      fontSize: 10,
+      fontSize: 11,
     );
 
-    // Grid + Y labels.
-    const gridCount = 4;
+    _drawText(
+      canvas,
+      'cm',
+      const Offset(4, 4),
+      const TextStyle(
+        color: labelColor,
+        fontSize: 10,
+        fontWeight: FontWeight.w600,
+      ),
+      width: 30,
+    );
+
+    const gridCount = 5;
     for (int i = 0; i <= gridCount; i++) {
       final ratio = i / gridCount;
-      final y = chartRect.bottom -
-          chartRect.height * ratio;
+      final y = chartRect.bottom - chartRect.height * ratio;
 
       canvas.drawLine(
         Offset(chartRect.left, y),
@@ -148,22 +158,22 @@ class _HistoryChartPainter extends CustomPainter {
         value.toStringAsFixed(1),
         Offset(0, y - 7),
         axisTextStyle,
-        width: leftPad - 6,
+        width: leftPad - 7,
         align: TextAlign.right,
       );
     }
 
-    // X labels.
     final timeMin = points.first.time;
     final timeMax = points.last.time;
-    final totalSeconds =
-        timeMax.difference(timeMin).inSeconds.toDouble();
+    final totalSeconds = math.max(
+      1,
+      timeMax.difference(timeMin).inSeconds,
+    ).toDouble();
 
     const labelCount = 4;
     for (int i = 0; i <= labelCount; i++) {
       final ratio = i / labelCount;
-      final x = chartRect.left +
-          chartRect.width * ratio;
+      final x = chartRect.left + chartRect.width * ratio;
 
       canvas.drawLine(
         Offset(x, chartRect.bottom),
@@ -171,28 +181,39 @@ class _HistoryChartPainter extends CustomPainter {
         gridPaint,
       );
 
-      final index = ((points.length - 1) * ratio)
-          .round()
-          .clamp(0, points.length - 1);
+      final targetSeconds = totalSeconds * ratio;
+      HistoryPoint closest = points.first;
+      double closestDelta = double.infinity;
 
-      final point = points[index];
+      for (final point in points) {
+        final seconds = point.time
+            .difference(timeMin)
+            .inSeconds
+            .toDouble();
+        final delta = (seconds - targetSeconds).abs();
+        if (delta < closestDelta) {
+          closestDelta = delta;
+          closest = point;
+        }
+      }
 
       _drawText(
         canvas,
-        _formatTime(point.time),
-        Offset(x - 24, chartRect.bottom + 7),
+        _formatTime(closest.time),
+        Offset(x - 28, chartRect.bottom + 8),
         axisTextStyle,
-        width: 48,
+        width: 56,
         align: TextAlign.center,
       );
     }
 
-    // Plot series.
     _drawSeries(
       canvas,
       chartRect,
       yMin,
       yMax,
+      timeMin,
+      totalSeconds,
       (point) => point.node1,
       node1Color,
     );
@@ -202,29 +223,24 @@ class _HistoryChartPainter extends CustomPainter {
       chartRect,
       yMin,
       yMax,
+      timeMin,
+      totalSeconds,
       (point) => point.node2,
       node2Color,
     );
 
-    _drawSeries(
+    _drawLegend(
       canvas,
-      chartRect,
-      yMin,
-      yMax,
-      (point) => point.max,
-      maxColor,
+      Offset(chartRect.left, 14),
+      node1Color,
+      'Node 1',
     );
-
-    // Legend.
-    final legendY = 2.0;
-    _drawLegend(canvas, Offset(chartRect.left, legendY), node1Color, 'Node 1');
-    _drawLegend(canvas, Offset(chartRect.left + 80, legendY), node2Color, 'Node 2');
-    _drawLegend(canvas, Offset(chartRect.left + 160, legendY), maxColor, 'Lớn nhất');
-
-    // Avoid unused variable warning.
-    if (totalSeconds < 0) {
-      return;
-    }
+    _drawLegend(
+      canvas,
+      Offset(chartRect.left + 100, 14),
+      node2Color,
+      'Node 2',
+    );
   }
 
   void _drawSeries(
@@ -232,30 +248,34 @@ class _HistoryChartPainter extends CustomPainter {
     Rect rect,
     double yMin,
     double yMax,
+    DateTime timeMin,
+    double totalSeconds,
     double? Function(HistoryPoint) valueOf,
     Color color,
   ) {
     final path = Path();
     bool started = false;
+
     final pointPaint = Paint()
       ..color = color
       ..style = PaintingStyle.fill;
 
-    for (int i = 0; i < points.length; i++) {
-      final value = valueOf(points[i]);
+    for (final point in points) {
+      final value = valueOf(point);
       if (value == null) {
         started = false;
         continue;
       }
 
-      final x = points.length == 1
-          ? rect.center.dx
-          : rect.left +
-              rect.width * (i / (points.length - 1));
+      final seconds = point.time
+          .difference(timeMin)
+          .inSeconds
+          .toDouble();
+      final ratio = (seconds / totalSeconds).clamp(0.0, 1.0);
 
+      final x = rect.left + rect.width * ratio;
       final y = rect.bottom -
-          ((value - yMin) / (yMax - yMin)) *
-              rect.height;
+          ((value - yMin) / (yMax - yMin)) * rect.height;
 
       final offset = Offset(x, y);
 
@@ -266,12 +286,12 @@ class _HistoryChartPainter extends CustomPainter {
         path.lineTo(offset.dx, offset.dy);
       }
 
-      canvas.drawCircle(offset, 2.5, pointPaint);
+      canvas.drawCircle(offset, 3.2, pointPaint);
     }
 
     final linePaint = Paint()
       ..color = color
-      ..strokeWidth = 2.2
+      ..strokeWidth = 3.0
       ..style = PaintingStyle.stroke
       ..strokeCap = StrokeCap.round
       ..strokeJoin = StrokeJoin.round;
@@ -287,26 +307,25 @@ class _HistoryChartPainter extends CustomPainter {
   ) {
     final paint = Paint()
       ..color = color
-      ..strokeWidth = 2.5
+      ..strokeWidth = 3
       ..strokeCap = StrokeCap.round;
 
     canvas.drawLine(
       offset,
-      Offset(offset.dx + 14, offset.dy),
+      Offset(offset.dx + 18, offset.dy),
       paint,
     );
 
     _drawText(
       canvas,
       text,
-      Offset(offset.dx + 18, offset.dy - 7),
+      Offset(offset.dx + 23, offset.dy - 8),
       const TextStyle(
-        fontSize: 10,
+        fontSize: 11,
         color: labelColor,
-        fontWeight: FontWeight.w500,
+        fontWeight: FontWeight.w600,
       ),
-      width: 62,
-      align: TextAlign.left,
+      width: 70,
     );
   }
 
@@ -333,7 +352,7 @@ class _HistoryChartPainter extends CustomPainter {
   String _formatTime(DateTime date) {
     final hour = date.hour.toString().padLeft(2, '0');
     final minute = date.minute.toString().padLeft(2, '0');
-    return '$hour:$minute';
+    return '${hour}:${minute}';
   }
 
   @override
