@@ -11,7 +11,7 @@ const { classifyFloodCause } = require("./flood-cause");
 
 const app = express();
 const PORT = Number(process.env.PORT || 3001);
-const API_VERSION = "1.8.0-tide-warning";
+const API_VERSION = "1.9.0-user-friendly-alerts";
 const CENTRAL_TIMEOUT_MS = Number(process.env.CENTRAL_TIMEOUT_MS || 20000);
 
 app.use(cors());
