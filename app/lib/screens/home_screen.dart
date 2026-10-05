@@ -216,11 +216,11 @@ class _HomeScreenState extends State<HomeScreen> {
         ) ??
         0;
 
-    if (level >= 3) return 'Cảnh báo ngập';
-    if (level >= 2) return 'Nguy cơ cao';
-    if (level >= 1) return 'Đang cảnh báo';
+    if (level >= 3) return 'Đang có ngập';
+    if (level >= 2) return 'Mực nước đang cao';
+    if (level >= 1) return 'Mực nước bắt đầu cao';
 
-    return 'Đang theo dõi';
+    return 'Đang theo dõi bình thường';
   }
 
   String waterLevel(Map<String, dynamic> site) {
