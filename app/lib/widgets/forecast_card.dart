@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 
 class ForecastCard extends StatelessWidget {
+  final double? predictedWaterCm;
   final String assessment;
+  final String status;
   final double? rateCmMin;
   final int? rainProbability;
   final double? rainMm;
@@ -10,7 +12,9 @@ class ForecastCard extends StatelessWidget {
 
   const ForecastCard({
     super.key,
+    required this.predictedWaterCm,
     required this.assessment,
+    required this.status,
     required this.rateCmMin,
     required this.rainProbability,
     required this.rainMm,
@@ -41,7 +45,7 @@ class ForecastCard extends StatelessWidget {
 
   String _rainText() {
     if (rainProbability == null && rainMm == null) {
-      return 'Đang cập nhật dự báo mưa';
+      return 'Đang cập nhật';
     }
 
     final probability = rainProbability == null
@@ -80,11 +84,11 @@ class ForecastCard extends StatelessWidget {
           Row(
             children: [
               Container(
-                width: 44,
-                height: 44,
+                width: 46,
+                height: 46,
                 decoration: BoxDecoration(
                   color: color.withValues(alpha: 0.10),
-                  borderRadius: BorderRadius.circular(12),
+                  borderRadius: BorderRadius.circular(13),
                 ),
                 child: Icon(
                   _assessmentIcon(),
@@ -97,20 +101,31 @@ class ForecastCard extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     const Text(
-                      'Đánh giá 1 giờ tới',
+                      'Mực nước dự báo sau 1 giờ',
                       style: TextStyle(
                         fontSize: 13,
                         color: Color(0xFF6B7280),
                         fontWeight: FontWeight.w600,
                       ),
                     ),
-                    const SizedBox(height: 3),
+                    const SizedBox(height: 2),
                     Text(
-                      assessment,
+                      predictedWaterCm == null
+                          ? '--'
+                          : '${predictedWaterCm!.toStringAsFixed(1)} cm',
                       style: TextStyle(
                         color: color,
-                        fontSize: 18,
+                        fontSize: 28,
                         fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      '$assessment • $status',
+                      style: const TextStyle(
+                        color: Color(0xFF374151),
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
                       ),
                     ),
                   ],
