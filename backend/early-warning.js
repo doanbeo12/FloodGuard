@@ -77,8 +77,17 @@ function buildCombinedWarning({ sensor = {}, tide = null, connection_status = nu
 
     const raining = fresh && boolValue(sensor.raining);
     const earlyWarning = fresh && boolValue(sensor.early_warning);
-    const trend = fresh ? String(sensor.trend || "UNKNOWN") : "UNKNOWN";
-    const rising = trend === "RISING" || trend === "RISING_FAST";
+    const rateCmMin = fresh ? finiteOrNull(sensor.rate_cm_min) : null;
+    const trend = !fresh
+        ? "OFFLINE"
+        : rateCmMin == null
+            ? "UPDATING"
+            : rateCmMin >= 0.20
+                ? "RISING"
+                : rateCmMin <= -0.20
+                    ? "FALLING"
+                    : "STABLE";
+    const rising = trend === "RISING";
     const monitoringDegraded = fresh && boolValue(sensor.monitoring_degraded);
     const measurementUncertain = fresh && isMeasurementAnomalyScenario(sensor.scenario);
 
@@ -94,15 +103,15 @@ function buildCombinedWarning({ sensor = {}, tide = null, connection_status = nu
 
     let level = Math.max(sensorLevel, tideLevel);
     let code = "NORMAL";
-    let label = "Chưa ghi nhận nguy cơ đáng kể";
+    let label = "Hiện chưa có dấu hiệu ngập";
     let message = "Mực nước và triều chưa tạo điều kiện cảnh báo tổng hợp.";
 
     if (!fresh) {
         level = Math.max(level, 1);
         code = tideLevel > 0 ? "CENTRAL_OFFLINE_TIDE_RISK" : "CENTRAL_OFFLINE";
         label = tideLevel > 0
-            ? "Central offline • vẫn có nguy cơ triều"
-            : "Central đang offline";
+            ? "Thiết bị mất kết nối, triều vẫn đang cao"
+            : "Thiết bị đang mất kết nối";
         message = tideLevel > 0
             ? `Không có dữ liệu cảm biến realtime. ${tideDescription(tideEvidence)}`
             : "Không có dữ liệu mới từ Central nên không thể đánh giá mực nước hiện tại.";
@@ -110,46 +119,46 @@ function buildCombinedWarning({ sensor = {}, tide = null, connection_status = nu
         level = Math.max(tideLevel, 1);
         code = tideLevel > 0 ? "MEASUREMENT_RECHECK_TIDE" : "MEASUREMENT_RECHECK";
         label = tideLevel > 0
-            ? "Đang xác minh số đo • theo dõi triều"
-            : "Đang xác minh số đo";
+            ? "Đang kiểm tra số đo, đồng thời triều đang cao"
+            : "Đang kiểm tra số đo bất thường";
         message = "Số đo cao chưa được xác nhận là mực nước thực tế; hệ thống tiếp tục đối chiếu hai node và xu hướng dâng.";
     } else if (floodCause.flooding_detected) {
         if (floodCause.code === "RAIN_TIDE") {
             code = "FLOOD_RAIN_TIDE";
-            label = "Ngập • mưa và triều cùng góp phần";
+            label = "Đang ngập, mưa và triều đều có ảnh hưởng";
             message = `Đang ghi nhận ngập, có mưa và triều cao gần đỉnh. ${tideDescription(tideEvidence)}`;
         } else if (floodCause.code === "TIDE") {
             code = "FLOOD_TIDE";
-            label = "Ngập • có khả năng chịu ảnh hưởng triều";
+            label = "Đang ngập, khả năng chủ yếu do triều";
             message = `Đang ghi nhận ngập và triều cao gần đỉnh. ${tideDescription(tideEvidence)}`;
         } else if (floodCause.code === "RAIN") {
             code = "FLOOD_RAIN";
-            label = "Ngập • mưa là yếu tố nổi bật";
+            label = "Đang ngập, khả năng chủ yếu do mưa";
             message = "Đang ghi nhận ngập và cảm biến mưa đang hoạt động; mức triều chưa đủ điều kiện đóng góp theo cấu hình.";
         } else {
-            code = "FLOOD_UNKNOWN";
-            label = "Đang ngập • chưa xác định rõ nguyên nhân";
-            message = "Đang ghi nhận ngập nhưng chưa đủ bằng chứng để quy về mưa hoặc triều.";
+            code = "FLOOD_LOCAL_DRAINAGE";
+            label = "Đang ngập, có thể do nước thoát chậm";
+            message = "Không ghi nhận mưa tại cảm biến và triều chưa ở vùng đóng góp; nguyên nhân sơ bộ có thể là thoát nước chậm hoặc ứ đọng cục bộ.";
         }
     } else if (tideLevel > 0 && raining && (rising || earlyWarning)) {
         code = "RAIN_TIDE_EARLY_WARNING";
-        label = "Nguy cơ tăng do mưa + triều";
+        label = "Mực nước có nguy cơ tăng do mưa và triều";
         message = `Mực nước chưa xác nhận ngập nhưng đang có tín hiệu tăng/cảnh báo sớm, đồng thời có mưa và triều cao. ${tideDescription(tideEvidence)}`;
     } else if (tideLevel > 0 && (rising || earlyWarning)) {
         code = "TIDE_EARLY_WARNING";
-        label = "Nguy cơ tăng do triều cao";
+        label = "Mực nước có nguy cơ tăng khi triều đang cao";
         message = `Mực nước đang có xu hướng tăng hoặc cảnh báo sớm và triều đang ở vùng đáng chú ý. ${tideDescription(tideEvidence)}`;
     } else if (tideLevel > 0) {
         code = "TIDE_WATCH";
-        label = "Theo dõi triều cao";
+        label = "Triều sắp cao, nên theo dõi";
         message = `Chưa ghi nhận ngập nhưng triều dự báo đang ở mức cần theo dõi. ${tideDescription(tideEvidence)}`;
     } else if (earlyWarning) {
         code = "SENSOR_EARLY_WARNING";
-        label = "Cảnh báo sớm từ cảm biến";
+        label = "Mực nước đang tăng, cần theo dõi";
         message = "Central phát hiện xu hướng mực nước có nguy cơ đạt ngưỡng tiếp theo.";
     } else if (sensorLevel > 0) {
         code = "SENSOR_ALERT";
-        label = "Cảnh báo theo mực nước";
+        label = "Mực nước đang cao, cần theo dõi";
         message = "Mực nước đã đi vào vùng cảnh báo của thuật toán tại Central.";
     }
 
@@ -172,7 +181,7 @@ function buildCombinedWarning({ sensor = {}, tide = null, connection_status = nu
             alert_level: sensor.alert_level == null ? null : Number(sensor.alert_level),
             early_warning: earlyWarning,
             trend,
-            rate_cm_min: finiteOrNull(sensor.rate_cm_min),
+            rate_cm_min: rateCmMin,
             monitoring_degraded: monitoringDegraded,
             measurement_uncertain: measurementUncertain,
             raining
