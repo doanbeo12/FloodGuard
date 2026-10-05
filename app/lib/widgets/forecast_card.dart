@@ -1,9 +1,17 @@
 import 'package:flutter/material.dart';
 
+class ForecastLevelPoint {
+  final int minutes;
+  final double waterLevelCm;
+
+  const ForecastLevelPoint({
+    required this.minutes,
+    required this.waterLevelCm,
+  });
+}
+
 class ForecastCard extends StatelessWidget {
-  final double? predictedWaterCm;
-  final String assessment;
-  final String status;
+  final List<ForecastLevelPoint> points;
   final double? rateCmMin;
   final int? rainProbability;
   final double? rainMm;
@@ -12,29 +20,13 @@ class ForecastCard extends StatelessWidget {
 
   const ForecastCard({
     super.key,
-    required this.predictedWaterCm,
-    required this.assessment,
-    required this.status,
+    required this.points,
     required this.rateCmMin,
     required this.rainProbability,
     required this.rainMm,
     required this.methodText,
     required this.summary,
   });
-
-  Color _assessmentColor() {
-    final text = assessment.toLowerCase();
-    if (text.contains('tăng')) return const Color(0xFFF97316);
-    if (text.contains('giảm')) return const Color(0xFF16A34A);
-    return const Color(0xFF2563EB);
-  }
-
-  IconData _assessmentIcon() {
-    final text = assessment.toLowerCase();
-    if (text.contains('tăng')) return Icons.trending_up;
-    if (text.contains('giảm')) return Icons.trending_down;
-    return Icons.trending_flat;
-  }
 
   String _rateText() {
     if (rateCmMin == null) return 'Đang cập nhật';
@@ -55,13 +47,18 @@ class ForecastCard extends StatelessWidget {
         ? '--'
         : '${rainMm!.toStringAsFixed(1)} mm';
 
-    return '${probability} • ${amount}';
+    return '$probability • $amount';
+  }
+
+  Color _levelColor(double level) {
+    if (level >= 15) return const Color(0xFFDC2626);
+    if (level >= 10) return const Color(0xFFF97316);
+    if (level >= 7) return const Color(0xFFEAB308);
+    return const Color(0xFF2563EB);
   }
 
   @override
   Widget build(BuildContext context) {
-    final color = _assessmentColor();
-
     return Container(
       padding: const EdgeInsets.all(17),
       decoration: BoxDecoration(
@@ -84,56 +81,53 @@ class ForecastCard extends StatelessWidget {
           Row(
             children: [
               Container(
-                width: 46,
-                height: 46,
+                width: 44,
+                height: 44,
                 decoration: BoxDecoration(
-                  color: color.withValues(alpha: 0.10),
-                  borderRadius: BorderRadius.circular(13),
+                  color: const Color(0xFF2563EB).withValues(alpha: 0.10),
+                  borderRadius: BorderRadius.circular(12),
                 ),
-                child: Icon(
-                  _assessmentIcon(),
-                  color: color,
+                child: const Icon(
+                  Icons.query_stats,
+                  color: Color(0xFF2563EB),
                 ),
               ),
               const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text(
-                      'Mực nước dự báo sau 1 giờ',
-                      style: TextStyle(
-                        fontSize: 13,
-                        color: Color(0xFF6B7280),
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      predictedWaterCm == null
-                          ? '--'
-                          : '${predictedWaterCm!.toStringAsFixed(1)} cm',
-                      style: TextStyle(
-                        color: color,
-                        fontSize: 28,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      '$assessment • $status',
-                      style: const TextStyle(
-                        color: Color(0xFF374151),
-                        fontSize: 12,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ],
+              const Expanded(
+                child: Text(
+                  'Mực nước dự báo trong 1 giờ tới',
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                  ),
                 ),
               ),
             ],
           ),
-          const SizedBox(height: 14),
+          const SizedBox(height: 16),
+
+          if (points.isEmpty)
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 10),
+              child: Text(
+                'Đang cập nhật các mốc dự báo.',
+                style: TextStyle(
+                  color: Color(0xFF6B7280),
+                  fontSize: 13,
+                ),
+              ),
+            )
+          else
+            for (final point in points) ...[
+              _ForecastRow(
+                point: point,
+                color: _levelColor(point.waterLevelCm),
+              ),
+              if (point != points.last) const SizedBox(height: 9),
+            ],
+
+          const SizedBox(height: 15),
+
           Row(
             children: [
               Expanded(
@@ -153,21 +147,91 @@ class ForecastCard extends StatelessWidget {
               ),
             ],
           ),
-          const SizedBox(height: 13),
-          Text(
-            summary,
-            style: const TextStyle(
-              fontSize: 13,
-              height: 1.45,
-              color: Color(0xFF374151),
+
+          if (summary.isNotEmpty) ...[
+            const SizedBox(height: 13),
+            Text(
+              summary,
+              style: const TextStyle(
+                fontSize: 13,
+                height: 1.45,
+                color: Color(0xFF374151),
+              ),
             ),
-          ),
+          ],
+
           const SizedBox(height: 8),
           Text(
             methodText,
             style: const TextStyle(
               fontSize: 11,
               color: Color(0xFF9CA3AF),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ForecastRow extends StatelessWidget {
+  final ForecastLevelPoint point;
+  final Color color;
+
+  const _ForecastRow({
+    required this.point,
+    required this.color,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(
+        horizontal: 13,
+        vertical: 11,
+      ),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.06),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: color.withValues(alpha: 0.16),
+        ),
+      ),
+      child: Row(
+        children: [
+          SizedBox(
+            width: 78,
+            child: Text(
+              '+${point.minutes} phút',
+              style: const TextStyle(
+                fontSize: 12,
+                color: Color(0xFF6B7280),
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+          Expanded(
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(8),
+              child: LinearProgressIndicator(
+                minHeight: 7,
+                value: (point.waterLevelCm / 15).clamp(0.02, 1.0),
+                backgroundColor: const Color(0xFFE5E7EB),
+                valueColor: AlwaysStoppedAnimation<Color>(color),
+              ),
+            ),
+          ),
+          const SizedBox(width: 12),
+          SizedBox(
+            width: 62,
+            child: Text(
+              '${point.waterLevelCm.toStringAsFixed(1)} cm',
+              textAlign: TextAlign.right,
+              style: TextStyle(
+                color: color,
+                fontSize: 13,
+                fontWeight: FontWeight.bold,
+              ),
             ),
           ),
         ],
