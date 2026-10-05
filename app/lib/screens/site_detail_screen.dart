@@ -508,91 +508,6 @@ class _SiteDetailScreenState extends State<SiteDetailScreen> {
     return _toDouble(weather['rain_mm']);
   }
 
-  bool _heavyRainExpected(Map<String, dynamic>? weather) {
-    if (weather == null) return false;
-    final probability = _forecastRainProbability(weather);
-    final rainMm = _forecastRainMm(weather) ?? 0;
-    final condition = weather['condition']?.toString();
-
-    return rainMm >= 5 ||
-        (probability != null && probability >= 80) ||
-        condition == 'HEAVY_RAIN' ||
-        condition == 'THUNDERSTORM';
-  }
-
-  bool _rainExpected(Map<String, dynamic>? weather) {
-    if (weather == null) return false;
-    final probability = _forecastRainProbability(weather);
-    final rainMm = _forecastRainMm(weather) ?? 0;
-    final condition = weather['condition']?.toString();
-
-    return rainMm >= 0.5 ||
-        (probability != null && probability >= 50) ||
-        condition == 'DRIZZLE' ||
-        condition == 'RAIN' ||
-        condition == 'HEAVY_RAIN' ||
-        condition == 'THUNDERSTORM';
-  }
-
-  String _forecastAssessment(
-    double? rate,
-    Map<String, dynamic>? weather,
-  ) {
-    final heavyRain = _heavyRainExpected(weather);
-    final rainExpected = _rainExpected(weather);
-
-    if (rate == null) {
-      if (heavyRain) return 'Có khả năng tăng';
-      if (rainExpected) return 'Có thể tăng nhẹ';
-      return 'Khả năng ổn định';
-    }
-
-    if (rate >= 0.20) {
-      if (heavyRain) return 'Có khả năng tiếp tục tăng';
-      if (rainExpected) return 'Có khả năng tăng';
-      return 'Có thể tăng chậm rồi ổn định';
-    }
-
-    if (rate <= -0.20) {
-      if (heavyRain) return 'Có thể giảm chậm hoặc tăng lại';
-      if (rainExpected) return 'Có khả năng giảm chậm';
-      return 'Có khả năng tiếp tục giảm';
-    }
-
-    if (heavyRain) return 'Có khả năng tăng';
-    if (rainExpected) return 'Có thể tăng nhẹ';
-    return 'Khả năng ổn định';
-  }
-
-  String _forecastSummary(
-    double? rate,
-    Map<String, dynamic>? weather,
-    bool measurementUncertain,
-  ) {
-    if (measurementUncertain) {
-      return 'Số đo hiện tại đang được kiểm tra nên tạm thời chưa dùng để đánh giá mực nước trong 1 giờ tới.';
-    }
-
-    if (weather == null) {
-      return 'Dự báo thời tiết đang được cập nhật. Hệ thống tạm dùng tốc độ mực nước hiện tại để đánh giá xu hướng ngắn hạn.';
-    }
-
-    final probability = _forecastRainProbability(weather);
-    final rainMm = _forecastRainMm(weather);
-    final assessment = _forecastAssessment(rate, weather);
-
-    final rainText = probability == null && rainMm == null
-        ? 'Dự báo mưa đang được cập nhật'
-        : 'Khả năng mưa ${probability == null ? '--' : '$probability%'}'
-            ', lượng mưa khoảng ${rainMm == null ? '--' : '${rainMm.toStringAsFixed(1)} mm'}';
-
-    final speedText = rate == null
-        ? 'tốc độ mực nước đang được cập nhật'
-        : 'tốc độ hiện tại ${rateText(rate)}';
-
-    return '$rainText; $speedText. Trong 1 giờ tới: $assessment.';
-  }
-
 
   IconData _weatherIcon(dynamic condition) {
     switch (condition?.toString()) {
@@ -1019,26 +934,53 @@ class _SiteDetailScreenState extends State<SiteDetailScreen> {
         ? Map<String, dynamic>.from(forecastRaw)
         : <String, dynamic>{};
     final forecastAvailable = waterForecast['available'] == true;
+
     final forecastInputsRaw = waterForecast['inputs'];
     final forecastInputs = forecastInputsRaw is Map
         ? Map<String, dynamic>.from(forecastInputsRaw)
         : <String, dynamic>{};
 
-    final predictedWaterCm =
-        _toDouble(waterForecast['predicted_water_cm']);
+    final forecastPoints = <ForecastLevelPoint>[];
+    final rawForecastPoints = waterForecast['forecast_points'];
 
-    final forecastAssessment = !centralOnline
-        ? 'Tạm dừng khi thiết bị mất kết nối'
-        : forecastAvailable
-            ? (waterForecast['direction_label']?.toString() ??
-                'Đang cập nhật')
-            : measurementUncertain
-                ? 'Đang kiểm tra số đo'
-                : _forecastAssessment(backendRate, nextHourWeather);
+    if (rawForecastPoints is List) {
+      for (final item in rawForecastPoints) {
+        if (item is! Map) continue;
 
-    final forecastStatus = forecastAvailable
-        ? (waterForecast['status']?.toString() ?? 'Đang cập nhật')
-        : 'Ước lượng chưa sẵn sàng';
+        final minutes =
+            int.tryParse(item['minutes']?.toString() ?? '');
+        final level =
+            _toDouble(item['predicted_water_cm']);
+
+        if (minutes == null || level == null) continue;
+
+        forecastPoints.add(
+          ForecastLevelPoint(
+            minutes: minutes,
+            waterLevelCm: level,
+          ),
+        );
+      }
+    }
+
+    // Tương thích trong lúc Backend vừa chuyển phiên bản:
+    // nếu chưa có mảng 4 mốc nhưng còn giá trị 60 phút cũ thì vẫn hiển thị mốc 60.
+    if (forecastPoints.isEmpty) {
+      final legacy60 =
+          _toDouble(waterForecast['predicted_water_cm']);
+      if (legacy60 != null) {
+        forecastPoints.add(
+          ForecastLevelPoint(
+            minutes: 60,
+            waterLevelCm: legacy60,
+          ),
+        );
+      }
+    }
+
+    forecastPoints.sort(
+      (a, b) => a.minutes.compareTo(b.minutes),
+    );
 
     final forecastRate =
         _toDouble(forecastInputs['rate_cm_min']) ?? backendRate;
@@ -1055,16 +997,14 @@ class _SiteDetailScreenState extends State<SiteDetailScreen> {
         ? 'Không có dữ liệu mực nước mới nên tạm dừng dự báo 1 giờ tới.'
         : forecastAvailable
             ? (waterForecast['summary']?.toString() ??
-                'Đang cập nhật dự báo mực nước.')
-            : _forecastSummary(
-                backendRate,
-                nextHourWeather,
-                measurementUncertain,
-              );
+                'Đang cập nhật các mốc dự báo mực nước.')
+            : measurementUncertain
+                ? 'Số đo hiện tại đang được kiểm tra nên chưa dùng để dự báo.'
+                : 'Mô hình đang cập nhật dữ liệu dự báo.';
 
     final methodText = forecastAvailable
         ? 'Ước lượng thực nghiệm từ mực nước hiện tại, tốc độ thay đổi, mưa dự báo và triều.'
-        : 'Đánh giá tạm thời từ tốc độ mực nước và dự báo mưa trong giờ tới.';
+        : 'Đang chờ đủ dữ liệu để tính các mốc 15, 30, 45 và 60 phút.';
 
     return ListView(
       physics: const AlwaysScrollableScrollPhysics(),
@@ -1310,9 +1250,7 @@ class _SiteDetailScreenState extends State<SiteDetailScreen> {
 
         centralOnline
             ? ForecastCard(
-                predictedWaterCm: predictedWaterCm,
-                assessment: forecastAssessment,
-                status: forecastStatus,
+                points: forecastPoints,
                 rateCmMin: forecastRate,
                 rainProbability: forecastRainProbability,
                 rainMm: forecastRainMm,
