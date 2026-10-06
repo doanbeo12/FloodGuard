@@ -1,5 +1,6 @@
 const mqtt = require("mqtt");
 const { pool } = require("./db");
+const { observeObstructionCandidate } = require("./obstruction-state");
 require("dotenv").config();
 
 const MQTT_URL = "mqtt://broker.hivemq.com:1883"; // TEST: co dinh HiveMQ de khong bi .env cu ghi de
@@ -205,6 +206,14 @@ function startMqttCollector() {
             const scenario = normalizeCode(data.scenario);
             const alertRaw = Number(data.alertLevel);
             const alertLevel = Number.isInteger(alertRaw) && alertRaw >= 0 && alertRaw <= 4 ? alertRaw : null;
+
+            observeObstructionCandidate({
+                siteId: DEFAULT_SITE_ID,
+                scenario,
+                node1WaterLevel: data.node1WaterLevel,
+                node2WaterLevel: data.node2WaterLevel,
+                maxWaterLevel: data.maxWaterLevel
+            });
 
             await setCentralOnline(true);
             await trackNodeStatus("Node 1", "node1Online", boolValue(data.node1Online));
