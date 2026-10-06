@@ -456,21 +456,29 @@ class _SiteDetailScreenState extends State<SiteDetailScreen> {
     return '${_twoDigits(time.day)}/${_twoDigits(time.month)}';
   }
 
-  String _nextTidePeakText(Map<String, dynamic> tide) {
-    final raw = tide['next_high'];
-    if (raw is! Map) return 'Đang cập nhật dự báo triều';
+  String _tidePeakText(Map<String, dynamic> tide) {
+    dynamic raw = tide['display_high'] ?? tide['next_high'];
 
-    final nextHigh = Map<String, dynamic>.from(raw);
-    final level = _toDouble(nextHigh['level_m']);
-    final time = nextHigh['time']?.toString();
-    final date = nextHigh['date']?.toString();
+    if (raw is! Map) {
+      final previous = tide['previous_event'];
+      if (previous is Map &&
+          previous['type']?.toString().toUpperCase() == 'HIGH') {
+        raw = previous;
+      }
+    }
 
-    if (level == null) return 'Đang cập nhật dự báo triều';
+    if (raw is! Map) return '-- m';
+
+    final peak = Map<String, dynamic>.from(raw);
+    final level = _toDouble(peak['level_m']);
+    final time = peak['time']?.toString();
+    final date = peak['date']?.toString();
+
+    if (level == null) return '-- m';
 
     var when = '';
     if (time != null && time.isNotEmpty) {
-      final shortTime = time.length >= 5 ? time.substring(0, 5) : time;
-      when = shortTime;
+      when = time.length >= 5 ? time.substring(0, 5) : time;
     }
 
     if (date != null && date.length >= 10) {
@@ -479,8 +487,8 @@ class _SiteDetailScreenState extends State<SiteDetailScreen> {
     }
 
     return when.isEmpty
-        ? 'Đỉnh tiếp theo: ${level.toStringAsFixed(2)} m'
-        : 'Đỉnh tiếp theo: ${level.toStringAsFixed(2)} m • $when';
+        ? '${level.toStringAsFixed(2)} m'
+        : '${level.toStringAsFixed(2)} m • $when';
   }
 
   Map<String, dynamic>? _nextHourWeather() {
@@ -909,7 +917,7 @@ class _SiteDetailScreenState extends State<SiteDetailScreen> {
     final tide = tideRaw is Map
         ? Map<String, dynamic>.from(tideRaw)
         : <String, dynamic>{};
-    final tidePeakText = _nextTidePeakText(tide);
+    final tidePeakText = _tidePeakText(tide);
 
     final floodCauseCode =
         statusResult?['flood_cause']?.toString() ??
@@ -1185,7 +1193,7 @@ class _SiteDetailScreenState extends State<SiteDetailScreen> {
 
         _infoRow(
           icon: Icons.waves_outlined,
-          title: 'Triều trong phân tích',
+          title: 'Triều cường',
           value: tidePeakText,
           valueColor: const Color(0xFF7C3AED),
         ),
