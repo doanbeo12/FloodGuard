@@ -218,7 +218,7 @@ app.get("/api/sites/:id/status", async (req, res) => {
         if (!sites.length) return res.status(404).json({ error: "Không tìm thấy địa điểm" });
 
         const [rows] = await pool.execute(
-            `SELECT id, recorded_at,
+            `SELECT id, site_id, recorded_at,
                     node1_distance, node2_distance,
                     node1_water_level, node2_water_level, max_water_level,
                     node1_online, node2_online,
