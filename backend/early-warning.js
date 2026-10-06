@@ -5,6 +5,7 @@ const {
     getTideHighEvidence,
     isMeasurementAnomalyScenario
 } = require("./flood-cause");
+const { getObstructionState } = require("./obstruction-state");
 
 const CENTRAL_TIMEOUT_MS = Number(process.env.CENTRAL_TIMEOUT_MS || 20000);
 
@@ -89,7 +90,11 @@ function buildCombinedWarning({ sensor = {}, tide = null, connection_status = nu
                     : "STABLE";
     const rising = trend === "RISING";
     const monitoringDegraded = fresh && boolValue(sensor.monitoring_degraded);
-    const measurementUncertain = fresh && isMeasurementAnomalyScenario(sensor.scenario);
+    const obstruction = getObstructionState(sensor.site_id || 1);
+    const measurementUncertain = fresh && (
+        isMeasurementAnomalyScenario(sensor.scenario)
+        || obstruction.candidate
+    );
 
     const factors = [];
     if (!fresh) factors.push("CENTRAL_OFFLINE");
@@ -99,6 +104,7 @@ function buildCombinedWarning({ sensor = {}, tide = null, connection_status = nu
     if (earlyWarning) factors.push("SENSOR_EARLY_WARNING");
     if (monitoringDegraded) factors.push("MONITORING_DEGRADED");
     if (measurementUncertain) factors.push("MEASUREMENT_RECHECK");
+    if (obstruction.confirmed) factors.push("OBSTRUCTION_SUSPECTED");
     if (tideEvidence.active) factors.push("TIDE_HIGH");
 
     let level = Math.max(sensorLevel, tideLevel);
@@ -117,11 +123,18 @@ function buildCombinedWarning({ sensor = {}, tide = null, connection_status = nu
             : "Không có dữ liệu mới từ Central nên không thể đánh giá mực nước hiện tại.";
     } else if (measurementUncertain) {
         level = Math.max(tideLevel, 1);
-        code = tideLevel > 0 ? "MEASUREMENT_RECHECK_TIDE" : "MEASUREMENT_RECHECK";
-        label = tideLevel > 0
-            ? "Đang kiểm tra số đo, đồng thời triều đang cao"
-            : "Đang kiểm tra số đo bất thường";
-        message = "Số đo cao chưa được xác nhận là mực nước thực tế; hệ thống tiếp tục đối chiếu hai node và xu hướng dâng.";
+
+        if (obstruction.confirmed) {
+            code = "OBSTRUCTION_SUSPECTED";
+            label = "Nghi có xe hoặc vật cản dưới cảm biến";
+            message = `Số đo lệch cục bộ đã duy trì ít nhất ${obstruction.confirm_seconds} giây; hệ thống không dùng giá trị này để kết luận ngập.`;
+        } else {
+            code = tideLevel > 0 ? "MEASUREMENT_RECHECK_TIDE" : "MEASUREMENT_RECHECK";
+            label = tideLevel > 0
+                ? "Đang kiểm tra số đo, đồng thời triều đang cao"
+                : "Đang kiểm tra số đo bất thường";
+            message = `Đang đối chiếu số đo bất thường. Nếu duy trì đủ ${obstruction.confirm_seconds} giây sẽ chuyển sang nghi có xe hoặc vật cản.`;
+        }
     } else if (floodCause.flooding_detected) {
         if (floodCause.code === "RAIN_TIDE") {
             code = "FLOOD_RAIN_TIDE";
@@ -184,6 +197,10 @@ function buildCombinedWarning({ sensor = {}, tide = null, connection_status = nu
             rate_cm_min: rateCmMin,
             monitoring_degraded: monitoringDegraded,
             measurement_uncertain: measurementUncertain,
+            obstruction_candidate: obstruction.candidate,
+            obstruction_suspected: obstruction.confirmed,
+            obstruction_elapsed_seconds: obstruction.elapsed_seconds,
+            obstruction_confirm_seconds: obstruction.confirm_seconds,
             raining
         },
         tide: {
