@@ -948,71 +948,33 @@ class _SiteDetailScreenState extends State<SiteDetailScreen> {
         ? Map<String, dynamic>.from(forecastInputsRaw)
         : <String, dynamic>{};
 
-    final forecastPoints = <ForecastLevelPoint>[];
-    final rawForecastPoints = waterForecast['forecast_points'];
-
-    if (rawForecastPoints is List) {
-      for (final item in rawForecastPoints) {
-        if (item is! Map) continue;
-
-        final minutes =
-            int.tryParse(item['minutes']?.toString() ?? '');
-        final level =
-            _toDouble(item['predicted_water_cm']);
-
-        if (minutes == null || level == null) continue;
-
-        forecastPoints.add(
-          ForecastLevelPoint(
-            minutes: minutes,
-            waterLevelCm: level,
-          ),
-        );
-      }
-    }
-
-    // Tương thích trong lúc Backend vừa chuyển phiên bản:
-    // nếu chưa có mảng 4 mốc nhưng còn giá trị 60 phút cũ thì vẫn hiển thị mốc 60.
-    if (forecastPoints.isEmpty) {
-      final legacy60 =
-          _toDouble(waterForecast['predicted_water_cm']);
-      if (legacy60 != null) {
-        forecastPoints.add(
-          ForecastLevelPoint(
-            minutes: 60,
-            waterLevelCm: legacy60,
-          ),
-        );
-      }
-    }
-
-    forecastPoints.sort(
-      (a, b) => a.minutes.compareTo(b.minutes),
-    );
-
-    final forecastRate =
-        _toDouble(forecastInputs['rate_cm_min']) ?? backendRate;
+    final predictedWaterCm =
+        _toDouble(waterForecast['predicted_water_cm']);
 
     final forecastRainProbability =
         _toDouble(forecastInputs['rain_probability'])?.round() ??
         _forecastRainProbability(nextHourWeather);
 
-    final forecastRainMm =
-        _toDouble(forecastInputs['rain_mm_1h']) ??
-        _forecastRainMm(nextHourWeather);
+    final forecastTideLevel =
+        _toDouble(forecastInputs['tide_level_m']);
+
+    final forecastTideRiskLabel =
+        forecastInputs['tide_risk_label']?.toString() ?? '--';
+
+    final forecastRainTriggered =
+        forecastInputs['rain_triggered'] == true;
+
+    final forecastTideTriggered =
+        forecastInputs['tide_triggered'] == true;
 
     final forecastSummary = !centralOnline
         ? 'Không có dữ liệu mực nước mới nên tạm dừng dự báo 1 giờ tới.'
         : forecastAvailable
             ? (waterForecast['summary']?.toString() ??
-                'Đang cập nhật các mốc dự báo mực nước.')
+                'Đang cập nhật dự báo mực nước sau 1 giờ.')
             : measurementUncertain
                 ? 'Số đo hiện tại đang được kiểm tra nên chưa dùng để dự báo.'
-                : 'Mô hình đang cập nhật dữ liệu dự báo.';
-
-    final methodText = forecastAvailable
-        ? 'Ước lượng thực nghiệm từ mực nước hiện tại, tốc độ thay đổi, mưa dự báo và triều.'
-        : 'Đang chờ đủ dữ liệu để tính các mốc 15, 30, 45 và 60 phút.';
+                : 'Đang cập nhật dự báo mực nước sau 1 giờ.';
 
     return ListView(
       physics: const AlwaysScrollableScrollPhysics(),
@@ -1258,12 +1220,12 @@ class _SiteDetailScreenState extends State<SiteDetailScreen> {
 
         centralOnline
             ? ForecastCard(
-                points: forecastPoints,
-                rateCmMin: forecastRate,
+                predictedWaterCm: predictedWaterCm,
                 rainProbability: forecastRainProbability,
-                rainMm: forecastRainMm,
-                methodText: methodText,
-                summary: forecastSummary,
+                tideLevelM: forecastTideLevel,
+                tideRiskLabel: forecastTideRiskLabel,
+                rainTriggered: forecastRainTriggered,
+                tideTriggered: forecastTideTriggered,
               )
             : Container(
                 width: double.infinity,
