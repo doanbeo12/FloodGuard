@@ -69,36 +69,48 @@ function nextHourRainProbability(weather = null) {
 }
 
 function tidePeakForForecast(tide = null) {
-    const raw = tide?.next_high || tide?.display_high || null;
+    // Dự báo chỉ xét đỉnh triều TƯƠNG LAI. display_high chỉ dùng để hiển thị,
+    // không được dùng để cộng mức nước nếu đó là đỉnh đã qua.
+    const raw = tide?.next_high || null;
+
     if (!raw) {
         return {
             levelM: null,
+            minutesFromNow: null,
+            withinThreeHours: false,
             riskBand: "UNKNOWN",
-            riskLabel: "Không có số liệu"
+            riskLabel: "Không có đỉnh triều tương lai"
         };
     }
 
     const levelM = finiteOrNull(raw.level_m);
+    const minutesFromNow = finiteOrNull(raw.minutes_from_now);
 
     if (levelM == null) {
         return {
             levelM: null,
+            minutesFromNow,
+            withinThreeHours: false,
             riskBand: "UNKNOWN",
             riskLabel: "Không có số liệu"
         };
     }
 
+    const withinThreeHours = minutesFromNow != null
+        && minutesFromNow >= 0
+        && minutesFromNow <= 180;
+
     if (levelM >= 1.60) {
-        return { levelM, riskBand: "BD3", riskLabel: "BĐ III" };
+        return { levelM, minutesFromNow, withinThreeHours, riskBand: "BD3", riskLabel: "BĐ III" };
     }
     if (levelM >= 1.50) {
-        return { levelM, riskBand: "BD2", riskLabel: "BĐ II" };
+        return { levelM, minutesFromNow, withinThreeHours, riskBand: "BD2", riskLabel: "BĐ II" };
     }
     if (levelM >= 1.40) {
-        return { levelM, riskBand: "BD1", riskLabel: "BĐ I" };
+        return { levelM, minutesFromNow, withinThreeHours, riskBand: "BD1", riskLabel: "BĐ I" };
     }
 
-    return { levelM, riskBand: "BELOW_BD1", riskLabel: "Dưới BĐ I" };
+    return { levelM, minutesFromNow, withinThreeHours, riskBand: "BELOW_BD1", riskLabel: "Dưới BĐ I" };
 }
 
 function buildOneHourWaterForecast({
@@ -159,8 +171,9 @@ function buildOneHourWaterForecast({
         && rainProbability > rainThresholdPercent;
 
     const tidePeak = tidePeakForForecast(tide);
-    const tideTriggered = tidePeak.riskBand === "BD2"
-        || tidePeak.riskBand === "BD3";
+    const tideTriggered = tidePeak.withinThreeHours
+        && (tidePeak.riskBand === "BD2"
+            || tidePeak.riskBand === "BD3");
 
     const rainContributionCm = rainTriggered ? rainAddCm : 0;
     const tideContributionCm = tideTriggered ? tideAddCm : 0;
@@ -187,6 +200,8 @@ function buildOneHourWaterForecast({
             rain_triggered: rainTriggered,
             rain_contribution_cm: rainContributionCm,
             tide_level_m: tidePeak.levelM,
+            minutes_to_next_high: tidePeak.minutesFromNow,
+            tide_within_3h: tidePeak.withinThreeHours,
             tide_risk_band: tidePeak.riskBand,
             tide_risk_label: tidePeak.riskLabel,
             tide_triggered: tideTriggered,
@@ -194,7 +209,7 @@ function buildOneHourWaterForecast({
             substituted_current_water: current.substituted
         },
         rule:
-            "Nền mực nước sau khi loại sai số nhỏ; mưa >70% cộng 3 cm; triều cường từ BĐ II cộng 3 cm."
+            "Nền mực nước sau khi loại sai số nhỏ; mưa >70% cộng 3 cm; triều cường từ BĐ II chỉ cộng 3 cm khi còn cách đỉnh triều không quá 3 giờ."
     };
 }
 
