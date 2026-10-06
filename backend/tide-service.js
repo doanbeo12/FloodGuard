@@ -1094,8 +1094,8 @@ async function getSiteTideSummary(siteId, stationOverride = null) {
         return value;
     }
 
-    const bulletin = bulletins[0];
-    const [rows] = await pool.execute(
+    let bulletin = bulletins[0];
+    let [rows] = await pool.execute(
         `SELECT DATE_FORMAT(forecast_date, '%Y-%m-%d') AS forecast_date,
                 station, event_type, event_index, level_m,
                 TIME_FORMAT(event_time, '%H:%i:%s') AS event_time
@@ -1106,6 +1106,33 @@ async function getSiteTideSummary(siteId, stationOverride = null) {
     );
 
     if (!rows.length) {
+        const [stationBulletins] = await pool.execute(
+            `SELECT DISTINCT tb.id,
+                    DATE_FORMAT(tb.bulletin_date, '%Y-%m-%d') AS bulletin_date,
+                    tb.source_url, tb.fetched_at, tb.parse_status, tb.parse_message
+             FROM tide_bulletins tb
+             JOIN tide_forecasts tf ON tf.bulletin_id = tb.id
+             WHERE tb.parse_status = 'OK' AND tf.station = ?
+             ORDER BY tb.bulletin_date DESC, tb.fetched_at DESC
+             LIMIT 1`,
+            [station]
+        );
+
+        if (stationBulletins.length) {
+            bulletin = stationBulletins[0];
+            [rows] = await pool.execute(
+                `SELECT DATE_FORMAT(forecast_date, '%Y-%m-%d') AS forecast_date,
+                        station, event_type, event_index, level_m,
+                        TIME_FORMAT(event_time, '%H:%i:%s') AS event_time
+                 FROM tide_forecasts
+                 WHERE bulletin_id = ? AND station = ?
+                 ORDER BY forecast_date, event_time, event_type DESC, event_index`,
+                [bulletin.id, station]
+            );
+        }
+    }
+
+    if (!rows.length) {
         const value = {
             available: false,
             station,
@@ -1113,7 +1140,7 @@ async function getSiteTideSummary(siteId, stationOverride = null) {
             bulletin_date: String(bulletin.bulletin_date).slice(0, 10),
             source_url: bulletin.source_url,
             fetched_at: bulletin.fetched_at,
-            message: `Bản tin mới nhất không có dữ liệu cho trạm ${station}.`
+            message: `MySQL chưa có mốc triều HIGH/LOW cho trạm ${station}.`
         };
         siteTideCache.set(cacheKey, { at: Date.now(), value });
         return value;
