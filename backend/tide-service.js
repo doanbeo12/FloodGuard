@@ -1146,6 +1146,14 @@ async function getSiteTideSummary(siteId, stationOverride = null) {
     const nextHigh = events.find(event => event._at.getTime() > nowMs && event.type === "HIGH") || null;
     const nextLow = events.find(event => event._at.getTime() > nowMs && event.type === "LOW") || null;
 
+    const highEvents = events.filter(event => event.type === "HIGH");
+    const previousHigh = [...highEvents].reverse()
+        .find(event => event._at.getTime() <= nowMs) || null;
+
+    // Giá trị dùng để hiển thị luôn có số liệu khi MySQL còn ít nhất một mốc HIGH:
+    // ưu tiên đỉnh kế tiếp; nếu cửa sổ dự báo đã qua thì giữ đỉnh HIGH gần nhất.
+    const displayHigh = nextHigh || previousHigh || highEvents[0] || null;
+
     const forecastDates = rows.map(row => String(row.forecast_date).slice(0, 10)).sort();
     const forecastCoverageEnd = forecastDates.at(-1) || null;
     const today = vietnamDateString();
@@ -1198,6 +1206,8 @@ async function getSiteTideSummary(siteId, stationOverride = null) {
         next_event: cleanEvent(next),
         next_high: cleanEvent(nextHigh),
         next_low: cleanEvent(nextLow),
+        display_high: cleanEvent(displayHigh),
+        display_high_is_next: Boolean(nextHigh),
         message: stale
             ? `Cửa sổ dự báo của bản tin đã hết hạn (đến ${forecastCoverageEnd}); dữ liệu chỉ dùng để tham khảo.`
             : `Trạm ${station} còn dữ liệu dự báo đến ${forecastCoverageEnd}.`
