@@ -511,11 +511,6 @@ class _SiteDetailScreenState extends State<SiteDetailScreen> {
     return value?.round();
   }
 
-  double? _forecastRainMm(Map<String, dynamic>? weather) {
-    if (weather == null) return null;
-    return _toDouble(weather['rain_mm']);
-  }
-
 
   IconData _weatherIcon(dynamic condition) {
     switch (condition?.toString()) {
