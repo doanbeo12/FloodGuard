@@ -6,6 +6,7 @@ const {
     isMeasurementAnomalyScenario
 } = require("./flood-cause");
 const { getObstructionState } = require("./obstruction-state");
+const { updateFloodState } = require("./flood-state");
 
 const CENTRAL_TIMEOUT_MS = Number(process.env.CENTRAL_TIMEOUT_MS || 20000);
 
@@ -96,9 +97,23 @@ function buildCombinedWarning({ sensor = {}, tide = null, connection_status = nu
         || obstruction.candidate
     );
 
+    const floodState = updateFloodState({
+        siteId: sensor.site_id || 1,
+        fresh,
+        rawFlooding: floodCause.flooding_detected,
+        rawCause: floodCause.code,
+        currentWaterCm: floodCause.evidence?.current_water_cm,
+        measurementUncertain,
+        raining,
+        tideActive: tideEvidence.active
+    });
+
+    const effectiveFlooding = floodState.effectiveFlooding;
+    const effectiveFloodCause = floodState.effectiveCause || floodCause.code;
+
     const factors = [];
     if (!fresh) factors.push("CENTRAL_OFFLINE");
-    if (floodCause.flooding_detected && fresh) factors.push("FLOOD_DETECTED");
+    if (effectiveFlooding && fresh) factors.push("FLOOD_DETECTED");
     if (raining) factors.push("RAIN");
     if (rising) factors.push("WATER_RISING");
     if (earlyWarning) factors.push("SENSOR_EARLY_WARNING");
@@ -121,6 +136,33 @@ function buildCombinedWarning({ sensor = {}, tide = null, connection_status = nu
         message = tideLevel > 0
             ? `Không có dữ liệu cảm biến realtime. ${tideDescription(tideEvidence)}`
             : "Không có dữ liệu mới từ Central nên không thể đánh giá mực nước hiện tại.";
+    } else if (effectiveFlooding) {
+        // Khi đã xác nhận ngập, không xóa cảnh báo chỉ vì cảm biến mưa vừa khô
+        // hoặc một vài mẫu tiếp theo tạm thời bị đánh dấu bất thường.
+        // Chỉ clear khi mực nước đáng tin cậy xuống dưới ngưỡng liên tục đủ thời gian.
+        level = Math.max(level, 1);
+
+        if (effectiveFloodCause === "RAIN_TIDE") {
+            code = "FLOOD_RAIN_TIDE";
+            label = "Đang ngập, mưa và triều đều có ảnh hưởng";
+            message = raining
+                ? `Đang ghi nhận ngập, có mưa và triều cao gần đỉnh. ${tideDescription(tideEvidence)}`
+                : `Mưa đã tạnh nhưng ngập chưa được xác nhận là đã hết; nguyên nhân mưa vẫn được giữ trong thời gian nước còn ngập. ${tideDescription(tideEvidence)}`;
+        } else if (effectiveFloodCause === "TIDE") {
+            code = "FLOOD_TIDE";
+            label = "Đang ngập, khả năng chủ yếu do triều";
+            message = `Đang ghi nhận ngập và triều cao gần đỉnh. ${tideDescription(tideEvidence)}`;
+        } else if (effectiveFloodCause === "RAIN") {
+            code = "FLOOD_RAIN";
+            label = "Đang ngập, khả năng chủ yếu do mưa";
+            message = raining
+                ? "Đang ghi nhận ngập và cảm biến mưa đang hoạt động."
+                : "Mưa đã tạnh nhưng mực nước chưa xuống dưới ngưỡng đủ lâu để xác nhận hết ngập.";
+        } else {
+            code = "FLOOD_LOCAL_DRAINAGE";
+            label = "Đang ngập, có thể do nước thoát chậm";
+            message = "Mực nước vẫn đang ở trạng thái ngập; nguyên nhân sơ bộ có thể là thoát nước chậm hoặc ứ đọng cục bộ.";
+        }
     } else if (measurementUncertain) {
         level = Math.max(tideLevel, 1);
 
@@ -134,24 +176,6 @@ function buildCombinedWarning({ sensor = {}, tide = null, connection_status = nu
                 ? "Đang kiểm tra số đo, đồng thời triều đang cao"
                 : "Đang kiểm tra số đo bất thường";
             message = `Đang đối chiếu số đo bất thường. Nếu duy trì đủ ${obstruction.confirm_seconds} giây sẽ chuyển sang nghi có xe hoặc vật cản.`;
-        }
-    } else if (floodCause.flooding_detected) {
-        if (floodCause.code === "RAIN_TIDE") {
-            code = "FLOOD_RAIN_TIDE";
-            label = "Đang ngập, mưa và triều đều có ảnh hưởng";
-            message = `Đang ghi nhận ngập, có mưa và triều cao gần đỉnh. ${tideDescription(tideEvidence)}`;
-        } else if (floodCause.code === "TIDE") {
-            code = "FLOOD_TIDE";
-            label = "Đang ngập, khả năng chủ yếu do triều";
-            message = `Đang ghi nhận ngập và triều cao gần đỉnh. ${tideDescription(tideEvidence)}`;
-        } else if (floodCause.code === "RAIN") {
-            code = "FLOOD_RAIN";
-            label = "Đang ngập, khả năng chủ yếu do mưa";
-            message = "Đang ghi nhận ngập và cảm biến mưa đang hoạt động; mức triều chưa đủ điều kiện đóng góp theo cấu hình.";
-        } else {
-            code = "FLOOD_LOCAL_DRAINAGE";
-            label = "Đang ngập, có thể do nước thoát chậm";
-            message = "Không ghi nhận mưa tại cảm biến và triều chưa ở vùng đóng góp; nguyên nhân sơ bộ có thể là thoát nước chậm hoặc ứ đọng cục bộ.";
         }
     } else if (tideLevel > 0 && raining && (rising || earlyWarning)) {
         code = "RAIN_TIDE_EARLY_WARNING";
@@ -201,6 +225,10 @@ function buildCombinedWarning({ sensor = {}, tide = null, connection_status = nu
             obstruction_suspected: obstruction.confirmed,
             obstruction_elapsed_seconds: obstruction.elapsed_seconds,
             obstruction_confirm_seconds: obstruction.confirm_seconds,
+            flood_latched: floodState.floodLatched,
+            flood_clear_elapsed_seconds: floodState.clearElapsedSeconds,
+            flood_clear_confirm_seconds: floodState.clearConfirmSeconds,
+            flood_clear_threshold_cm: floodState.clearThresholdCm,
             raining
         },
         tide: {
@@ -218,7 +246,25 @@ function buildCombinedWarning({ sensor = {}, tide = null, connection_status = nu
             phase_label: tide?.phase_label || "Chưa xác định",
             basis: tideEvidence.basis
         },
-        flood_cause: floodCause
+        flood_cause: {
+            ...floodCause,
+            code: effectiveFlooding ? effectiveFloodCause : floodCause.code,
+            label: effectiveFlooding
+                ? (effectiveFloodCause === "RAIN_TIDE"
+                    ? "Mưa + triều"
+                    : effectiveFloodCause === "RAIN"
+                        ? "Mưa"
+                        : effectiveFloodCause === "TIDE"
+                            ? "Triều"
+                            : "Khả năng do thoát nước chậm hoặc ứ đọng cục bộ")
+                : floodCause.label,
+            flooding_detected: effectiveFlooding,
+            raw_code: floodCause.code,
+            raw_flooding_detected: floodCause.flooding_detected,
+            latched: floodState.floodLatched,
+            clear_confirm_seconds: floodState.clearConfirmSeconds,
+            clear_threshold_cm: floodState.clearThresholdCm
+        }
     };
 }
 
