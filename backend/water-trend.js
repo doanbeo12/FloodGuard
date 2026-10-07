@@ -186,6 +186,14 @@ async function getReliableWaterTrend(siteId = 1) {
 
     if (Math.abs(rate) < stableBand) rate = 0;
 
+    const firstWaterCm = filtered[0].waterCm;
+    const lastWaterCm = filtered[filtered.length - 1].waterCm;
+    const netChangeCm = lastWaterCm - firstWaterCm;
+    const netChangeThresholdCm = Math.max(
+        0.1,
+        envNumber("WATER_TREND_NET_CHANGE_THRESHOLD_CM", 0.5)
+    );
+
     return {
         available: true,
         rateCmPerMin: Number(rate.toFixed(3)),
@@ -193,8 +201,11 @@ async function getReliableWaterTrend(siteId = 1) {
         source: "BACKEND_ROBUST_TREND",
         pointsUsed: filtered.length,
         windowSeconds,
-        firstWaterCm: Number(filtered[0].waterCm.toFixed(2)),
-        lastWaterCm: Number(filtered[filtered.length - 1].waterCm.toFixed(2))
+        firstWaterCm: Number(firstWaterCm.toFixed(2)),
+        lastWaterCm: Number(lastWaterCm.toFixed(2)),
+        netChangeCm: Number(netChangeCm.toFixed(2)),
+        fallingConfirmed: netChangeCm <= -netChangeThresholdCm,
+        risingConfirmed: netChangeCm >= netChangeThresholdCm
     };
 }
 
