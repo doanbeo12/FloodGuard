@@ -116,7 +116,7 @@ function trendFromRate(rateCmMin) {
 async function getReliableWaterTrend(siteId = 1) {
     const windowSeconds = Math.max(
         15,
-        Math.round(envNumber("WATER_TREND_WINDOW_SECONDS", 30))
+        Math.round(envNumber("WATER_TREND_WINDOW_SECONDS", 20))
     );
     const minPoints = Math.max(
         4,
