@@ -281,6 +281,7 @@ app.get("/api/sites/:id/status", async (req, res) => {
             if (reliableTrend?.available) {
                 row.rate_cm_min = reliableTrend.rateCmPerMin;
                 row.trend = reliableTrend.trend;
+                row.recent_net_change_cm = reliableTrend.netChangeCm;
             }
         } catch (_) {}
 
@@ -331,6 +332,9 @@ app.get("/api/sites/:id/status", async (req, res) => {
                     : "CENTRAL_FALLBACK",
                 rate_points_used: reliableTrend?.pointsUsed ?? null,
                 rate_window_seconds: reliableTrend?.windowSeconds ?? null,
+                recent_net_change_cm: reliableTrend?.netChangeCm ?? null,
+                falling_confirmed: reliableTrend?.fallingConfirmed ?? false,
+                rising_confirmed: reliableTrend?.risingConfirmed ?? false,
                 next_threshold_cm: numberOrNull(row.next_threshold_cm),
                 eta_seconds: row.eta_seconds == null ? null : Number(row.eta_seconds),
                 node1_pdr: numberOrNull(row.node1_pdr),
@@ -391,6 +395,7 @@ app.get("/api/sites/:id/forecast", async (req, res) => {
             if (reliableTrend?.available) {
                 row.rate_cm_min = reliableTrend.rateCmPerMin;
                 row.trend = reliableTrend.trend;
+                row.recent_net_change_cm = reliableTrend.netChangeCm;
             }
         } catch (_) {}
 
