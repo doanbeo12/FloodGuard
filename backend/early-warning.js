@@ -327,7 +327,7 @@ async function getEarlyWarningSummary(siteId = 1) {
         water: {
             currentWaterCm: row.max_water_level == null ? null : Number(row.max_water_level),
             rateCmPerMin: row.rate_cm_min == null ? null : Number(row.rate_cm_min),
-            deviceRateCmPerMin,
+            deviceRateCmPerMin: deviceRateCmMin,
             rateSource: reliableTrend?.available
                 ? reliableTrend.source
                 : "CENTRAL_FALLBACK",
