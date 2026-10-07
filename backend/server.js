@@ -9,6 +9,7 @@ const { getEarlyWarningSummary, buildCombinedWarning } = require("./early-warnin
 const { getHcmcWeather, getHourlyWeather } = require("./weather-service");
 const { classifyFloodCause } = require("./flood-cause");
 const { buildOneHourWaterForecast } = require("./water-forecast");
+const { getReliableWaterTrend } = require("./water-trend");
 
 const app = express();
 const PORT = Number(process.env.PORT || 3001);
@@ -270,6 +271,19 @@ app.get("/api/sites/:id/status", async (req, res) => {
 
         const row = rows[0];
         const currentConnectionStatus = connectionStatus(row.recorded_at);
+
+        // rate/trend từ Central dùng hồi quy 30 giây nên có thể bị một spike/vật cản
+        // giữ ảnh hưởng quá lâu. Backend tính lại xu hướng robust từ lịch sử gần nhất.
+        const deviceRateCmMin = numberOrNull(row.rate_cm_min);
+        let reliableTrend = null;
+        try {
+            reliableTrend = await getReliableWaterTrend(siteId);
+            if (reliableTrend?.available) {
+                row.rate_cm_min = reliableTrend.rateCmPerMin;
+                row.trend = reliableTrend.trend;
+            }
+        } catch (_) {}
+
         const floodCause = classifyFloodCause({ sensor: row, tide });
         const combinedWarning = buildCombinedWarning({
             sensor: row,
@@ -311,6 +325,12 @@ app.get("/api/sites/:id/status", async (req, res) => {
                 node2_water_level: numberOrNull(row.node2_water_level),
                 max_water_level: numberOrNull(row.max_water_level),
                 rate_cm_min: numberOrNull(row.rate_cm_min),
+                device_rate_cm_min: deviceRateCmMin,
+                rate_source: reliableTrend?.available
+                    ? reliableTrend.source
+                    : "CENTRAL_FALLBACK",
+                rate_points_used: reliableTrend?.pointsUsed ?? null,
+                rate_window_seconds: reliableTrend?.windowSeconds ?? null,
                 next_threshold_cm: numberOrNull(row.next_threshold_cm),
                 eta_seconds: row.eta_seconds == null ? null : Number(row.eta_seconds),
                 node1_pdr: numberOrNull(row.node1_pdr),
@@ -365,6 +385,14 @@ app.get("/api/sites/:id/forecast", async (req, res) => {
         const site = sites[0];
         const row = rows[0];
         const status = connectionStatus(row.recorded_at);
+
+        try {
+            const reliableTrend = await getReliableWaterTrend(siteId);
+            if (reliableTrend?.available) {
+                row.rate_cm_min = reliableTrend.rateCmPerMin;
+                row.trend = reliableTrend.trend;
+            }
+        } catch (_) {}
 
         let tide = null;
         try {
