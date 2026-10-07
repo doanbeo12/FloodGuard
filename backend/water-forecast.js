@@ -146,7 +146,7 @@ function buildOneHourWaterForecast({
         return {
             available: false,
             horizon_minutes: 60,
-            model: "RULE_BASED_1H_V2",
+            model: "RULE_BASED_1H_V3",
             message: "Thiết bị đang mất kết nối nên chưa dự báo mực nước sau 1 giờ."
         };
     }
@@ -155,7 +155,7 @@ function buildOneHourWaterForecast({
         return {
             available: false,
             horizon_minutes: 60,
-            model: "RULE_BASED_1H_V2",
+            model: "RULE_BASED_1H_V3",
             message: current.reason || "Chưa có mực nước hiện tại đủ tin cậy để dự báo."
         };
     }
@@ -172,9 +172,17 @@ function buildOneHourWaterForecast({
     const reliableRateCmMin = finiteOrNull(
         sensor.rate_cm_min ?? sensor.rateCmPerMin
     );
+    const recentNetChangeCm = finiteOrNull(
+        sensor.recent_net_change_cm ?? sensor.recentNetChangeCm
+    );
+
     const fallingThresholdCmMin = Math.max(
         0,
         envNumber("WATER_FORECAST_FALLING_THRESHOLD_CM_MIN", 0.20)
+    );
+    const recentFallThresholdCm = Math.max(
+        0.1,
+        envNumber("WATER_FORECAST_RECENT_FALL_THRESHOLD_CM", 0.5)
     );
     const trendProjectionMinutes = Math.max(
         1,
@@ -184,15 +192,29 @@ function buildOneHourWaterForecast({
         0,
         envNumber("WATER_FORECAST_MAX_FALL_REDUCTION_CM", 3)
     );
+    const recentFallProjectionFactor = Math.max(
+        0,
+        envNumber("WATER_FORECAST_RECENT_FALL_FACTOR", 0.5)
+    );
 
-    const falling = reliableRateCmMin != null
+    const fallingByRate = reliableRateCmMin != null
         && reliableRateCmMin <= -fallingThresholdCmMin;
+    const fallingByRecentChange = recentNetChangeCm != null
+        && recentNetChangeCm <= -recentFallThresholdCm;
+    const falling = fallingByRate || fallingByRecentChange;
+
+    const rateReductionCm = fallingByRate
+        ? Math.abs(reliableRateCmMin) * trendProjectionMinutes
+        : 0;
+    const recentChangeReductionCm = fallingByRecentChange
+        ? Math.abs(recentNetChangeCm) * recentFallProjectionFactor
+        : 0;
 
     const fallingReductionCm = falling
         ? Math.min(
             rawBaseWaterCm,
             maxFallingReductionCm,
-            Math.abs(reliableRateCmMin) * trendProjectionMinutes
+            Math.max(rateReductionCm, recentChangeReductionCm)
         )
         : 0;
 
@@ -222,7 +244,7 @@ function buildOneHourWaterForecast({
     return {
         available: true,
         horizon_minutes: 60,
-        model: "RULE_BASED_1H_V2",
+        model: "RULE_BASED_1H_V3",
         predicted_water_cm: Number(predictedWaterCm.toFixed(2)),
         current_water_cm: Number(current.value.toFixed(2)),
         base_water_cm: Number(baseWaterCm.toFixed(2)),
@@ -231,8 +253,12 @@ function buildOneHourWaterForecast({
             sensor_zero_band_cm: zeroBandCm,
             sensor_zeroed: current.value <= zeroBandCm,
             reliable_rate_cm_min: reliableRateCmMin,
+            recent_net_change_cm: recentNetChangeCm,
+            falling_by_rate: fallingByRate,
+            falling_by_recent_change: fallingByRecentChange,
             falling,
             trend_projection_minutes: trendProjectionMinutes,
+            recent_fall_projection_factor: recentFallProjectionFactor,
             falling_reduction_cm: Number(fallingReductionCm.toFixed(2)),
             rain_probability: rainProbability,
             rain_threshold_percent: rainThresholdPercent,
@@ -248,7 +274,7 @@ function buildOneHourWaterForecast({
             substituted_current_water: current.substituted
         },
         rule:
-            "Nền mực nước sau khi loại sai số nhỏ; nếu mực nước đang giảm thì giảm nền dự báo theo xu hướng đã lọc (giới hạn tối đa 3 cm); mưa >70% cộng 3 cm; triều cường từ BĐ II chỉ cộng 3 cm khi còn cách đỉnh triều không quá 3 giờ."
+            "Nền mực nước sau khi loại sai số nhỏ; nếu chuỗi đo gần đây cho thấy nước đang giảm thì giảm nền dự báo theo rate hoặc mức giảm ròng gần đây (giới hạn tối đa 3 cm); mưa >70% cộng 3 cm; triều cường từ BĐ II chỉ cộng 3 cm khi còn cách đỉnh triều không quá 3 giờ."
     };
 }
 
