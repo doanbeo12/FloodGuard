@@ -146,7 +146,7 @@ function buildOneHourWaterForecast({
         return {
             available: false,
             horizon_minutes: 60,
-            model: "RULE_BASED_1H_V1",
+            model: "RULE_BASED_1H_V2",
             message: "Thiết bị đang mất kết nối nên chưa dự báo mực nước sau 1 giờ."
         };
     }
@@ -155,16 +155,51 @@ function buildOneHourWaterForecast({
         return {
             available: false,
             horizon_minutes: 60,
-            model: "RULE_BASED_1H_V1",
+            model: "RULE_BASED_1H_V2",
             message: current.reason || "Chưa có mực nước hiện tại đủ tin cậy để dự báo."
         };
     }
 
     // Sai số nhỏ khi mô hình đang khô không được xem là nước thật.
     // Ví dụ Node 1 = 0.3 cm, Node 2 = 0.1 cm -> nền dự báo = 0 cm.
-    const baseWaterCm = current.value <= zeroBandCm
+    const rawBaseWaterCm = current.value <= zeroBandCm
         ? 0
         : current.value;
+
+    // Nếu mực nước đang giảm thật, không giữ nguyên giá trị cao nhất hiện tại
+    // làm dự báo sau 1 giờ. Chỉ chiếu xu hướng giảm trong một khoảng ngắn
+    // và giới hạn mức giảm để tránh ngoại suy quá mạnh.
+    const reliableRateCmMin = finiteOrNull(
+        sensor.rate_cm_min ?? sensor.rateCmPerMin
+    );
+    const fallingThresholdCmMin = Math.max(
+        0,
+        envNumber("WATER_FORECAST_FALLING_THRESHOLD_CM_MIN", 0.20)
+    );
+    const trendProjectionMinutes = Math.max(
+        1,
+        envNumber("WATER_FORECAST_TREND_PROJECTION_MINUTES", 10)
+    );
+    const maxFallingReductionCm = Math.max(
+        0,
+        envNumber("WATER_FORECAST_MAX_FALL_REDUCTION_CM", 3)
+    );
+
+    const falling = reliableRateCmMin != null
+        && reliableRateCmMin <= -fallingThresholdCmMin;
+
+    const fallingReductionCm = falling
+        ? Math.min(
+            rawBaseWaterCm,
+            maxFallingReductionCm,
+            Math.abs(reliableRateCmMin) * trendProjectionMinutes
+        )
+        : 0;
+
+    const baseWaterCm = Math.max(
+        0,
+        rawBaseWaterCm - fallingReductionCm
+    );
 
     const rainProbability = nextHourRainProbability(weather);
     const rainTriggered = rainProbability != null
@@ -187,7 +222,7 @@ function buildOneHourWaterForecast({
     return {
         available: true,
         horizon_minutes: 60,
-        model: "RULE_BASED_1H_V1",
+        model: "RULE_BASED_1H_V2",
         predicted_water_cm: Number(predictedWaterCm.toFixed(2)),
         current_water_cm: Number(current.value.toFixed(2)),
         base_water_cm: Number(baseWaterCm.toFixed(2)),
@@ -195,6 +230,10 @@ function buildOneHourWaterForecast({
         inputs: {
             sensor_zero_band_cm: zeroBandCm,
             sensor_zeroed: current.value <= zeroBandCm,
+            reliable_rate_cm_min: reliableRateCmMin,
+            falling,
+            trend_projection_minutes: trendProjectionMinutes,
+            falling_reduction_cm: Number(fallingReductionCm.toFixed(2)),
             rain_probability: rainProbability,
             rain_threshold_percent: rainThresholdPercent,
             rain_triggered: rainTriggered,
@@ -209,7 +248,7 @@ function buildOneHourWaterForecast({
             substituted_current_water: current.substituted
         },
         rule:
-            "Nền mực nước sau khi loại sai số nhỏ; mưa >70% cộng 3 cm; triều cường từ BĐ II chỉ cộng 3 cm khi còn cách đỉnh triều không quá 3 giờ."
+            "Nền mực nước sau khi loại sai số nhỏ; nếu mực nước đang giảm thì giảm nền dự báo theo xu hướng đã lọc (giới hạn tối đa 3 cm); mưa >70% cộng 3 cm; triều cường từ BĐ II chỉ cộng 3 cm khi còn cách đỉnh triều không quá 3 giờ."
     };
 }
 
