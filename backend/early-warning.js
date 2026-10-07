@@ -7,6 +7,7 @@ const {
 } = require("./flood-cause");
 const { getObstructionState } = require("./obstruction-state");
 const { updateFloodState } = require("./flood-state");
+const { getReliableWaterTrend } = require("./water-trend");
 
 const CENTRAL_TIMEOUT_MS = Number(process.env.CENTRAL_TIMEOUT_MS || 20000);
 
@@ -291,6 +292,19 @@ async function getEarlyWarningSummary(siteId = 1) {
     }
 
     const row = rows[0];
+
+    const deviceRateCmMin = row.rate_cm_min == null
+        ? null
+        : Number(row.rate_cm_min);
+    let reliableTrend = null;
+    try {
+        reliableTrend = await getReliableWaterTrend(siteId);
+        if (reliableTrend?.available) {
+            row.rate_cm_min = reliableTrend.rateCmPerMin;
+            row.trend = reliableTrend.trend;
+        }
+    } catch (_) {}
+
     let tide = null;
     try {
         tide = await getSiteTideSummary(siteId);
@@ -313,6 +327,12 @@ async function getEarlyWarningSummary(siteId = 1) {
         water: {
             currentWaterCm: row.max_water_level == null ? null : Number(row.max_water_level),
             rateCmPerMin: row.rate_cm_min == null ? null : Number(row.rate_cm_min),
+            deviceRateCmPerMin,
+            rateSource: reliableTrend?.available
+                ? reliableTrend.source
+                : "CENTRAL_FALLBACK",
+            ratePointsUsed: reliableTrend?.pointsUsed ?? null,
+            rateWindowSeconds: reliableTrend?.windowSeconds ?? null,
             trend: row.trend || "UNKNOWN",
             nextThresholdCm: row.next_threshold_cm == null ? null : Number(row.next_threshold_cm),
             etaSeconds: row.eta_seconds == null || Number(row.eta_seconds) < 0 ? null : Number(row.eta_seconds),
