@@ -205,6 +205,18 @@ class _HomeScreenState extends State<HomeScreen> {
       return 'Chưa có dữ liệu';
     }
 
+    if (latest is Map) {
+      final latestMap = Map<String, dynamic>.from(latest);
+      final node1Online = latestMap['node1_online'] == true;
+      final node2Online = latestMap['node2_online'] == true;
+
+      if (!node1Online && !node2Online) {
+        return 'Mất kết nối Node 1 & Node 2';
+      }
+      if (!node1Online) return 'Node 1 mất kết nối';
+      if (!node2Online) return 'Node 2 mất kết nối';
+    }
+
     if (latest is Map &&
         _measurementUncertain(Map<String, dynamic>.from(latest))) {
       return 'Đang xác minh số đo';
