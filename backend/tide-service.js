@@ -997,6 +997,227 @@ function riskBandForPeak(level) {
 }
 
 
+// ============================================================
+// DEMO HIGH TIDE
+// Chỉ override dữ liệu triều do Backend trả về. Dữ liệu bản tin thật trong
+// tide_bulletins/tide_forecasts không bị sửa. Khi tắt, toàn bộ luồng quay
+// lại dữ liệu thật ngay lập tức.
+// ============================================================
+const DEMO_TIDE_LEVEL_M = 1.70;
+const DEMO_TIDE_PEAK_OFFSET_MINUTES = 30;
+const DEMO_TIDE_KEY = "HIGH_TIDE_DEMO";
+
+let tideDemoMemory = {
+    enabled: false,
+    levelM: DEMO_TIDE_LEVEL_M,
+    peakAtMs: null,
+    activatedAtMs: null,
+    persisted: false
+};
+let tideDemoTablePromise = null;
+let tideDemoLoaded = false;
+
+async function ensureTideDemoTable() {
+    if (!tideDemoTablePromise) {
+        tideDemoTablePromise = pool.query(
+            `CREATE TABLE IF NOT EXISTS demo_controls (
+                control_key VARCHAR(64) PRIMARY KEY,
+                control_value TEXT NOT NULL,
+                updated_at TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3)
+                    ON UPDATE CURRENT_TIMESTAMP(3)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`
+        ).catch(error => {
+            tideDemoTablePromise = null;
+            throw error;
+        });
+    }
+    return tideDemoTablePromise;
+}
+
+async function loadTideDemoFromDatabase() {
+    if (tideDemoLoaded) return tideDemoMemory;
+
+    try {
+        await ensureTideDemoTable();
+        const [rows] = await pool.execute(
+            "SELECT control_value FROM demo_controls WHERE control_key = ? LIMIT 1",
+            [DEMO_TIDE_KEY]
+        );
+        if (rows.length) {
+            const parsed = JSON.parse(String(rows[0].control_value || "{}"));
+            tideDemoMemory = {
+                enabled: parsed.enabled === true,
+                levelM: Number.isFinite(Number(parsed.levelM))
+                    ? Number(parsed.levelM)
+                    : DEMO_TIDE_LEVEL_M,
+                peakAtMs: Number.isFinite(Number(parsed.peakAtMs))
+                    ? Number(parsed.peakAtMs)
+                    : null,
+                activatedAtMs: Number.isFinite(Number(parsed.activatedAtMs))
+                    ? Number(parsed.activatedAtMs)
+                    : null,
+                persisted: true
+            };
+        }
+    } catch (error) {
+        console.warn("[TIDE DEMO] Không đọc được trạng thái lưu DB, dùng trạng thái bộ nhớ:", error.message);
+    }
+
+    tideDemoLoaded = true;
+    return tideDemoMemory;
+}
+
+async function getTideDemoState() {
+    await loadTideDemoFromDatabase();
+    const remainingMinutes = tideDemoMemory.enabled && tideDemoMemory.peakAtMs != null
+        ? Math.round((tideDemoMemory.peakAtMs - Date.now()) / 60000)
+        : null;
+
+    return {
+        ...tideDemoMemory,
+        remainingMinutes,
+        peakOffsetMinutes: DEMO_TIDE_PEAK_OFFSET_MINUTES
+    };
+}
+
+async function setTideDemoState(enabled) {
+    const now = Date.now();
+    tideDemoMemory = enabled
+        ? {
+            enabled: true,
+            levelM: DEMO_TIDE_LEVEL_M,
+            peakAtMs: now + DEMO_TIDE_PEAK_OFFSET_MINUTES * 60 * 1000,
+            activatedAtMs: now,
+            persisted: false
+        }
+        : {
+            enabled: false,
+            levelM: DEMO_TIDE_LEVEL_M,
+            peakAtMs: null,
+            activatedAtMs: null,
+            persisted: false
+        };
+
+    tideDemoLoaded = true;
+    siteTideCache.clear();
+
+    try {
+        await ensureTideDemoTable();
+        await pool.execute(
+            `INSERT INTO demo_controls (control_key, control_value)
+             VALUES (?, ?)
+             ON DUPLICATE KEY UPDATE control_value = VALUES(control_value), updated_at = CURRENT_TIMESTAMP(3)`,
+            [DEMO_TIDE_KEY, JSON.stringify(tideDemoMemory)]
+        );
+        tideDemoMemory.persisted = true;
+    } catch (error) {
+        console.warn("[TIDE DEMO] Không lưu được trạng thái vào DB, vẫn giữ trong bộ nhớ:", error.message);
+    }
+
+    return getTideDemoState();
+}
+
+function vietnamDateTimePartsFromMs(ms) {
+    const parts = new Intl.DateTimeFormat("en-CA", {
+        timeZone: "Asia/Ho_Chi_Minh",
+        year: "numeric", month: "2-digit", day: "2-digit",
+        hour: "2-digit", minute: "2-digit", second: "2-digit",
+        hourCycle: "h23"
+    }).formatToParts(new Date(ms)).reduce((acc, p) => {
+        acc[p.type] = p.value;
+        return acc;
+    }, {});
+
+    return {
+        date: `${parts.year}-${parts.month}-${parts.day}`,
+        time: `${parts.hour}:${parts.minute}:${parts.second}`
+    };
+}
+
+function buildDemoSiteTideSummary(station, demoState) {
+    const nowMs = Date.now();
+    const peakAtMs = Number(demoState.peakAtMs);
+    const levelM = Number(demoState.levelM || DEMO_TIDE_LEVEL_M);
+    const peak = vietnamDateTimePartsFromMs(peakAtMs);
+    const minutesFromNow = Math.round((peakAtMs - nowMs) / 60000);
+
+    const event = {
+        date: peak.date,
+        source_forecast_date: peak.date,
+        type: "HIGH",
+        event_index: 1,
+        level_m: levelM,
+        time: peak.time,
+        minutes_from_now: minutesFromNow,
+        demo: true
+    };
+
+    return {
+        available: true,
+        stale: false,
+        demo: true,
+        station: station || "TP_HCM",
+        requested_station: station || "TP_HCM",
+        fallback_source: "DEMO_HIGH_TIDE",
+        bulletin_date: vietnamDateString(new Date()),
+        fetched_at: new Date(),
+        source_url: null,
+        source_label: "Dữ liệu giả lập phục vụ demo",
+        forecast_coverage_end: peak.date,
+        phase: minutesFromNow >= 0 ? "RISING" : "FALLING",
+        phase_label: minutesFromNow >= 0 ? "Đang lên tới đỉnh giả lập" : "Đã qua đỉnh giả lập",
+        phase_basis: "Chế độ Giả lập triều cao trên Dashboard.",
+        previous_event: minutesFromNow < 0 ? event : null,
+        next_event: event,
+        next_high: minutesFromNow >= 0 ? event : null,
+        next_low: null,
+        display_high: event,
+        display_high_is_next: minutesFromNow >= 0,
+        message: `GIẢ LẬP: triều cao ${levelM.toFixed(2)} m (BĐ III), đỉnh cách thời điểm bật 30 phút.`
+    };
+}
+
+function buildDemoHcmcTideSummary(demoState) {
+    const nowMs = Date.now();
+    const peakAtMs = Number(demoState.peakAtMs);
+    const levelM = Number(demoState.levelM || DEMO_TIDE_LEVEL_M);
+    const peak = vietnamDateTimePartsFromMs(peakAtMs);
+    const minutesFromNow = Math.round((peakAtMs - nowMs) / 60000);
+    const daily = [{
+        date: peak.date,
+        peakLevelM: levelM,
+        peakTime: peak.time,
+        demo: true
+    }];
+
+    return {
+        available: true,
+        stale: false,
+        demo: true,
+        bulletinAgeHours: 0,
+        staleHours: STALE_HOURS,
+        forecastCoverageEnd: peak.date,
+        bulletinDate: vietnamDateString(new Date()),
+        fetchedAt: new Date(),
+        sourceUrl: null,
+        sourceLabel: "Dữ liệu giả lập phục vụ demo",
+        nextPeak: minutesFromNow >= 0 ? {
+            date: peak.date,
+            sourceForecastDate: peak.date,
+            time: peak.time,
+            levelM,
+            minutesFromNow,
+            demo: true
+        } : null,
+        highestForecast: daily[0],
+        riskBand: riskBandForPeak(levelM),
+        daily,
+        message: `GIẢ LẬP TRIỀU CAO đang bật: ${levelM.toFixed(2)} m (BĐ III), đỉnh được đặt sau 30 phút kể từ lúc bật.`,
+        lastRefresh: lastRefreshResult
+    };
+}
+
+
 // Cache ngắn cho API mobile/site. Dữ liệu triều chỉ thay đổi khi có bản tin mới,
 // nên không cần truy vấn MySQL ở mỗi lần app refresh trạng thái.
 const siteTideCache = new Map();
@@ -1066,6 +1287,11 @@ async function getSiteTideSummary(siteId, stationOverride = null) {
             station: null,
             message: "Địa điểm chưa được gán trạm triều."
         };
+    }
+
+    const demoState = await getTideDemoState();
+    if (demoState.enabled && Number.isFinite(Number(demoState.peakAtMs))) {
+        return buildDemoSiteTideSummary(station, demoState);
     }
 
     const cacheKey = `${parsedSiteId}|${station}`;
@@ -1285,6 +1511,11 @@ async function getSiteTideSummary(siteId, stationOverride = null) {
 }
 
 async function getHcmcTideSummary() {
+    const demoState = await getTideDemoState();
+    if (demoState.enabled && Number.isFinite(Number(demoState.peakAtMs))) {
+        return buildDemoHcmcTideSummary(demoState);
+    }
+
     const [bulletins] = await pool.query(
         `SELECT id, DATE_FORMAT(bulletin_date, '%Y-%m-%d') AS bulletin_date, source_url, fetched_at, parse_status, parse_message
          FROM tide_bulletins
@@ -1431,6 +1662,8 @@ module.exports = {
     refreshTideData,
     getHcmcTideSummary,
     getSiteTideSummary,
+    getTideDemoState,
+    setTideDemoState,
     startTideScheduler,
     parseForecastRows,
     parseBulletinDateFromText,
