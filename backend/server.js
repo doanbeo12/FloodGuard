@@ -4,7 +4,14 @@ require("dotenv").config();
 
 const { pool, checkDatabase } = require("./db");
 const { startMqttCollector } = require("./mqtt-collector");
-const { refreshTideData, getHcmcTideSummary, getSiteTideSummary, startTideScheduler } = require("./tide-service");
+const {
+    refreshTideData,
+    getHcmcTideSummary,
+    getSiteTideSummary,
+    getTideDemoState,
+    setTideDemoState,
+    startTideScheduler
+} = require("./tide-service");
 const { getEarlyWarningSummary, buildCombinedWarning } = require("./early-warning");
 const { getHcmcWeather, getHourlyWeather } = require("./weather-service");
 const { classifyFloodCause } = require("./flood-cause");
@@ -598,6 +605,37 @@ app.post("/api/tide/refresh", async (req, res) => {
         res.json({ ...result, summary });
     } catch (error) {
         res.status(502).json({ ok: false, error: error.message });
+    }
+});
+
+
+app.get("/api/tide/demo", async (req, res) => {
+    try {
+        res.json(await getTideDemoState());
+    } catch (error) {
+        res.status(500).json({ enabled: false, error: error.message });
+    }
+});
+
+app.post("/api/tide/demo", async (req, res) => {
+    try {
+        if (typeof req.body?.enabled !== "boolean") {
+            return res.status(400).json({ error: "enabled phải là true hoặc false" });
+        }
+
+        const state = await setTideDemoState(req.body.enabled);
+        const summary = await getHcmcTideSummary();
+
+        res.json({
+            ok: true,
+            ...state,
+            summary,
+            message: state.enabled
+                ? "Đã bật giả lập triều cao 1.70 m, đỉnh sau 30 phút."
+                : "Đã tắt giả lập triều cao; hệ thống đã trở về dữ liệu triều thật."
+        });
+    } catch (error) {
+        res.status(500).json({ ok: false, error: error.message });
     }
 });
 
