@@ -106,6 +106,11 @@ function formatSiteSummary(row) {
             node1_water_level: numberOrNull(row.node1_water_level),
             node2_water_level: numberOrNull(row.node2_water_level),
             max_water_level: numberOrNull(row.max_water_level),
+            node1_online: boolOrFalse(row.node1_online),
+            node2_online: boolOrFalse(row.node2_online),
+            node1_measurement_valid: boolOrFalse(row.node1_measurement_valid),
+            node2_measurement_valid: boolOrFalse(row.node2_measurement_valid),
+            monitoring_degraded: boolOrFalse(row.monitoring_degraded),
             raining: boolOrFalse(row.raining),
             alert_level: row.alert_level == null ? null : Number(row.alert_level),
             scenario: row.scenario || null,
@@ -162,6 +167,8 @@ app.get("/api/sites", async (req, res) => {
             `SELECT ms.site_id, ms.site_name, ms.street_name, ms.latitude, ms.longitude, ms.description, ms.tide_station,
                     sr.id AS reading_id, sr.recorded_at,
                     sr.node1_water_level, sr.node2_water_level, sr.max_water_level,
+                    sr.node1_online, sr.node2_online,
+                    sr.node1_measurement_valid, sr.node2_measurement_valid,
                     sr.raining, sr.alert_level, sr.scenario, sr.trend, sr.rate_cm_min,
                     sr.early_warning, sr.early_warning_code, sr.monitoring_degraded
              FROM monitoring_sites ms
