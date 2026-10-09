@@ -6,6 +6,8 @@
 
 const REF_API_BASE = `${String(window.FLOODGUARD_API_BASE_URL || "http://localhost:3001").replace(/\/$/, "")}/api`;
 const REFRESH_UI_MS = 60 * 1000;
+let tideDemoEnabled = false;
+let tideDemoBusy = false;
 
 function refEl(id) { return document.getElementById(id); }
 
@@ -41,10 +43,28 @@ function countdownText(minutes) {
     return rem ? `${h} giờ ${rem} phút` : `${h} giờ`;
 }
 
+function renderTideDemoButton(enabled) {
+    tideDemoEnabled = Boolean(enabled);
+    const btn = refEl("tideDemoBtn");
+    if (!btn) return;
+
+    btn.disabled = tideDemoBusy;
+    btn.setAttribute("aria-pressed", tideDemoEnabled ? "true" : "false");
+    btn.className = tideDemoEnabled
+        ? "btn btn-sm btn-danger"
+        : "btn btn-sm btn-outline-danger";
+    btn.innerHTML = tideDemoEnabled
+        ? '<i class="fa-solid fa-flask"></i> Đang giả lập triều cao'
+        : '<i class="fa-solid fa-flask"></i> Giả lập triều cao';
+}
+
 function renderTide(summary) {
     const badge = refEl("tideStatusBadge");
     const notice = refEl("tideFreshnessNotice");
     const source = refEl("tideSourceLink");
+    const refreshBtn = refEl("refreshTideBtn");
+
+    renderTideDemoButton(Boolean(summary?.demo));
 
     if (!summary?.available) {
         badge.className = "badge bg-secondary";
@@ -63,10 +83,21 @@ function renderTide(summary) {
         return;
     }
 
-    badge.className = summary.stale ? "badge bg-warning text-dark" : "badge bg-success";
-    badge.textContent = summary.stale ? "DỮ LIỆU CŨ" : "TỰ ĐỘNG • MỚI";
-    notice.className = `tide-notice ${summary.stale ? "tide-notice-warning" : "tide-notice-success"} mt-3`;
-    notice.textContent = summary.message || "--";
+    if (refreshBtn) refreshBtn.disabled = Boolean(summary.demo);
+
+    if (summary.demo) {
+        badge.className = "badge bg-danger";
+        badge.textContent = "GIẢ LẬP • BĐ III";
+        notice.className = "tide-notice tide-notice-warning mt-3";
+        notice.textContent = summary.message || "Đang bật chế độ giả lập triều cao.";
+        source.classList.add("disabled");
+        source.href = "#";
+    } else {
+        badge.className = summary.stale ? "badge bg-warning text-dark" : "badge bg-success";
+        badge.textContent = summary.stale ? "DỮ LIỆU CŨ" : "TỰ ĐỘNG • MỚI";
+        notice.className = `tide-notice ${summary.stale ? "tide-notice-warning" : "tide-notice-success"} mt-3`;
+        notice.textContent = summary.message || "--";
+    }
 
     const peak = summary.nextPeak || summary.highestForecast;
     const level = peak?.levelM ?? peak?.peakLevelM;
@@ -75,9 +106,9 @@ function renderTide(summary) {
     refEl("tidePeakDate").textContent = viDate(peak?.date);
     refEl("tideCountdown").textContent = summary.nextPeak ? countdownText(summary.nextPeak.minutesFromNow) : "Ngoài cửa sổ dự báo";
     refEl("tideRiskBand").textContent = summary.riskBand?.label || "--";
-    refEl("tideBulletinDate").textContent = viDate(summary.bulletinDate);
+    refEl("tideBulletinDate").textContent = summary.demo ? "GIẢ LẬP" : viDate(summary.bulletinDate);
 
-    if (summary.sourceUrl) {
+    if (!summary.demo && summary.sourceUrl) {
         source.classList.remove("disabled");
         source.href = summary.sourceUrl;
     } else {
@@ -184,6 +215,31 @@ async function manualRefreshTide() {
     }
 }
 
+async function toggleHighTideDemo() {
+    if (tideDemoBusy) return;
+
+    tideDemoBusy = true;
+    renderTideDemoButton(tideDemoEnabled);
+
+    try {
+        const result = await apiPost("/tide/demo", { enabled: !tideDemoEnabled });
+        tideDemoEnabled = Boolean(result.enabled);
+        if (result.summary) renderTide(result.summary);
+
+        // Cập nhật ngay dữ liệu status để Dashboard/App dùng cùng một dữ liệu triều
+        // trong phân tích nguyên nhân, không phải chờ chu kỳ refresh 60 giây.
+        await loadReferenceData();
+    } catch (error) {
+        const notice = refEl("tideFreshnessNotice");
+        notice.className = "tide-notice tide-notice-warning mt-3";
+        notice.textContent = `Không đổi được chế độ giả lập triều: ${error.message}`;
+    } finally {
+        tideDemoBusy = false;
+        renderTideDemoButton(tideDemoEnabled);
+    }
+}
+
 refEl("refreshTideBtn")?.addEventListener("click", manualRefreshTide);
+refEl("tideDemoBtn")?.addEventListener("click", toggleHighTideDemo);
 loadReferenceData();
 setInterval(loadReferenceData, REFRESH_UI_MS);
