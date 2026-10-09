@@ -903,6 +903,8 @@ class _SiteDetailScreenState extends State<SiteDetailScreen> {
     final maxLevel = trustedMaxLevel ?? 0.0;
     final node1 = number(data['node1_water_level']);
     final node2 = number(data['node2_water_level']);
+    final node1Online = centralOnline && data['node1_online'] == true;
+    final node2Online = centralOnline && data['node2_online'] == true;
     final backendRate = _toDouble(data['rate_cm_min']);
 
     final raining = data['raining'] == true;
@@ -1045,28 +1047,63 @@ class _SiteDetailScreenState extends State<SiteDetailScreen> {
             Expanded(
               child: _metricCard(
                 title: 'Node 1',
-                value: centralOnline
-                    ? '${node1.toStringAsFixed(1)} cm'
-                    : '--',
-                icon: Icons.sensors,
-                color: const Color(0xFF2563EB),
+                value: !centralOnline
+                    ? 'Không xác định'
+                    : node1Online
+                        ? '${node1.toStringAsFixed(1)} cm'
+                        : 'Mất kết nối',
+                icon: !centralOnline || !node1Online
+                    ? Icons.portable_wifi_off
+                    : Icons.sensors,
+                color: !centralOnline
+                    ? const Color(0xFF6B7280)
+                    : node1Online
+                        ? const Color(0xFF2563EB)
+                        : const Color(0xFFDC2626),
               ),
             ),
             const SizedBox(width: 12),
             Expanded(
               child: _metricCard(
                 title: 'Node 2',
-                value: centralOnline
-                    ? '${node2.toStringAsFixed(1)} cm'
-                    : '--',
-                icon: Icons.sensors,
-                color: const Color(0xFF7C3AED),
+                value: !centralOnline
+                    ? 'Không xác định'
+                    : node2Online
+                        ? '${node2.toStringAsFixed(1)} cm'
+                        : 'Mất kết nối',
+                icon: !centralOnline || !node2Online
+                    ? Icons.portable_wifi_off
+                    : Icons.sensors,
+                color: !centralOnline
+                    ? const Color(0xFF6B7280)
+                    : node2Online
+                        ? const Color(0xFF7C3AED)
+                        : const Color(0xFFDC2626),
               ),
             ),
           ],
         ),
 
         const SizedBox(height: 12),
+
+        _infoRow(
+          icon: Icons.hub_outlined,
+          title: 'Kết nối Node',
+          value: !centralOnline
+              ? 'Không xác định'
+              : node1Online && node2Online
+                  ? 'Node 1 & Node 2 online'
+                  : !node1Online && !node2Online
+                      ? 'Mất kết nối cả 2 Node'
+                      : !node1Online
+                          ? 'Node 1 mất kết nối'
+                          : 'Node 2 mất kết nối',
+          valueColor: !centralOnline
+              ? Colors.grey
+              : node1Online && node2Online
+                  ? Colors.green
+                  : Colors.red,
+        ),
 
         Row(
           children: [
