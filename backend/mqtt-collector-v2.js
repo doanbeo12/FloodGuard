@@ -15,7 +15,7 @@ const URL = process.env.MQTT_V2_URL || process.env.MQTT_URL || "mqtt://broker.hi
 const T1 = process.env.MQTT_V2_TOPIC_NODE1 || "floodguard/v2/node1/realtime";
 const T2 = process.env.MQTT_V2_TOPIC_NODE2 || "floodguard/v2/node2/realtime";
 const TS = process.env.MQTT_V2_TOPIC_STATUS || "floodguard/v2/central/status";
-const SAVE_MS = Math.max(1000, Number(process.env.DB_V2_SAMPLE_INTERVAL_MS || 10000));
+const SAVE_MS = Math.max(1000, Number(process.env.DB_V2_SAMPLE_INTERVAL_MS || 5000));
 const FRESH_MS = Math.max(SAVE_MS * 2, Number(process.env.MQTT_V2_FRESHNESS_MS || 30000));
 const MM_PER_TIP = Number(process.env.RAIN_MM_PER_TIP || 0);
 
