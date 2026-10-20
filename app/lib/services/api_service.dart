@@ -3,97 +3,45 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 
 class ApiService {
-  // Development default: Android Emulator -> backend on the same PC.
-  // Production build:
-  // flutter build apk --release \
-  //   --dart-define=API_BASE_URL=https://your-api-domain.example
   static const String _configuredBaseUrl = String.fromEnvironment(
     'API_BASE_URL',
-    defaultValue: 'http://10.0.2.2:3001',
+    defaultValue: 'https://backend-production-189c.up.railway.app',
   );
 
-  static String get baseUrl {
-    if (_configuredBaseUrl.endsWith('/')) {
-      return _configuredBaseUrl.substring(0, _configuredBaseUrl.length - 1);
-    }
-    return _configuredBaseUrl;
-  }
+  static String get baseUrl => _configuredBaseUrl.endsWith('/')
+      ? _configuredBaseUrl.substring(0, _configuredBaseUrl.length - 1)
+      : _configuredBaseUrl;
 
-  static Future<List<dynamic>> getSites() async {
+  static Future<Map<String, dynamic>> _get(String path) async {
     final response = await http
-        .get(Uri.parse('$baseUrl/api/sites'))
-        .timeout(const Duration(seconds: 10));
+        .get(Uri.parse(baseUrl + path))
+        .timeout(const Duration(seconds: 15));
 
-    if (response.statusCode != 200) {
+    if (response.statusCode != 200 && response.statusCode != 202) {
       throw Exception(
-        'Không thể tải danh sách địa điểm '
-        '(HTTP ${response.statusCode})',
+        'Không thể tải dữ liệu (HTTP ' + response.statusCode.toString() + ')',
       );
     }
 
-    final jsonData = jsonDecode(response.body);
-    return jsonData['data'] ?? [];
-  }
-
-  static Future<Map<String, dynamic>> getSiteStatus(int siteId) async {
-    final response = await http
-        .get(Uri.parse('$baseUrl/api/sites/$siteId/status'))
-        .timeout(const Duration(seconds: 10));
-
-    if (response.statusCode != 200) {
-      throw Exception(
-        'Không thể tải trạng thái địa điểm '
-        '(HTTP ${response.statusCode})',
-      );
+    final decoded = jsonDecode(response.body);
+    if (decoded is! Map) {
+      throw Exception('Dữ liệu máy chủ không hợp lệ');
     }
-
-    final jsonData = jsonDecode(response.body);
-    return Map<String, dynamic>.from(jsonData);
+    return Map<String, dynamic>.from(decoded);
   }
 
-  static Future<Map<String, dynamic>> getSiteHourlyWeather(
-    int siteId, {
-    int hours = 24,
-  }) async {
-    final response = await http
-        .get(
-          Uri.parse(
-            '$baseUrl/api/sites/$siteId/weather/hourly?hours=$hours',
-          ),
-        )
-        .timeout(const Duration(seconds: 12));
+  static Future<Map<String, dynamic>> getHealth() =>
+      _get('/api/v2/health');
 
-    if (response.statusCode != 200) {
-      throw Exception(
-        'Không thể tải dự báo thời tiết '
-        '(HTTP ${response.statusCode})',
-      );
-    }
+  static Future<Map<String, dynamic>> getLatest() =>
+      _get('/api/v2/latest');
 
-    final jsonData = jsonDecode(response.body);
-    return Map<String, dynamic>.from(jsonData);
-  }
+  static Future<Map<String, dynamic>> getForecast() =>
+      _get('/api/v2/forecast?sim_scale=60');
 
-  static Future<Map<String, dynamic>> getSiteHistory(
-    int siteId, {
-    int hours = 6,
-  }) async {
-    final response = await http
-        .get(
-          Uri.parse(
-            '$baseUrl/api/sites/$siteId/history?hours=$hours',
-          ),
-        )
-        .timeout(const Duration(seconds: 10));
+  static Future<Map<String, dynamic>> getRainHistory({int hours = 1}) =>
+      _get('/api/v2/rain/history?hours=' + hours.toString() + '&limit=500');
 
-    if (response.statusCode != 200) {
-      throw Exception(
-        'Không thể tải lịch sử địa điểm '
-        '(HTTP ${response.statusCode})',
-      );
-    }
-
-    final jsonData = jsonDecode(response.body);
-    return Map<String, dynamic>.from(jsonData);
-  }
+  static Future<Map<String, dynamic>> getTideHistory({int hours = 1}) =>
+      _get('/api/v2/tide/history?hours=' + hours.toString() + '&limit=500');
 }
