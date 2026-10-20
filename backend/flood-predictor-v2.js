@@ -6,7 +6,7 @@ require("dotenv").config();
 function safeDb(name) { return /^[A-Za-z0-9_]+$/.test(String(name || "")) ? String(name) : "floodguard_v2"; }
 function clamp(v, a, b) { return Math.min(b, Math.max(a, v)); }
 function mean(a) { const v = a.filter(Number.isFinite); return v.length ? v.reduce((s, x) => s + x, 0) / v.length : null; }
-function round(v, n = 2) { return Number.isFinite(v) ? Number(v.toFixed(n)) : null; }
+function round(v, n = 2) { return Number.isFinite(v) ? Number(v.toFixed(n)) : null; }\nfunction num(v) { if (v === null || v === undefined || v === "") return null; const n = Number(v); return Number.isFinite(n) ? n : null; }
 
 const DB = safeDb(process.env.V2_DB_NAME || "floodguard_v2");
 const SCALE = Math.max(1, Number(process.env.FORECAST_SIM_TIME_SCALE || process.env.TIDE_SIM_TIME_SCALE || 60));
@@ -21,7 +21,7 @@ const ABNORMAL_JUMP_CM = Math.max(1, Number(process.env.FLOOD_V2_ABNORMAL_JUMP_C
 const ABNORMAL_WINDOW_SEC = Math.max(10, Number(process.env.FLOOD_V2_ABNORMAL_WINDOW_SECONDS || 30));
 
 function regression(rows) {
-  const pts = rows.map(r => ({ t: new Date(r.recorded_at).getTime(), v: Number(r.water_level_cm) }))
+  const pts = rows.map(r => ({ t: new Date(r.recorded_at).getTime(), v: num(r.water_level_cm) }))
     .filter(p => Number.isFinite(p.t) && Number.isFinite(p.v));
   if (pts.length < 3) return 0;
   const t0 = pts[0].t;
@@ -80,15 +80,29 @@ function classifyCause({ rainRelevant, tideRelevant, abnormal }) {
 }
 
 function detectAbnormal(rows, rainRelevant, tideRelevant) {
-  if (rainRelevant || tideRelevant || rows.length < 2) return { suspected: false, max_jump_cm: 0 };
-  const cutoff = Date.now() - ABNORMAL_WINDOW_SEC * 1000;
-  const recent = rows.filter(r => new Date(r.recorded_at).getTime() >= cutoff);
-  let maxJump = 0;
-  for (let i = 1; i < recent.length; i++) {
-    const a = Number(recent[i - 1].water_level_cm), b = Number(recent[i].water_level_cm);
-    if (Number.isFinite(a) && Number.isFinite(b)) maxJump = Math.max(maxJump, Math.abs(b - a));
+  if (rainRelevant || tideRelevant || rows.length < 2) return { suspected: false, confirmed: false, max_jump_cm: 0, baseline_cm: null, age_seconds: null };
+  let maxJump = 0, jumpAt = null, baseline = null;
+  for (let i = 1; i < rows.length; i++) {
+    const a = num(rows[i - 1].water_level_cm), b = num(rows[i].water_level_cm);
+    if (!Number.isFinite(a) || !Number.isFinite(b)) continue;
+    const jump = b - a;
+    if (jump >= ABNORMAL_JUMP_CM && jump >= maxJump) {
+      maxJump = jump;
+      jumpAt = new Date(rows[i].recorded_at).getTime();
+      baseline = a;
+    }
   }
-  return { suspected: maxJump >= ABNORMAL_JUMP_CM, max_jump_cm: round(maxJump) };
+  const current = num(rows[rows.length - 1].water_level_cm);
+  const stillElevated = Number.isFinite(current) && Number.isFinite(baseline) && current >= baseline + ABNORMAL_JUMP_CM * 0.6;
+  const suspected = Number.isFinite(jumpAt) && stillElevated;
+  const age = suspected ? Math.max(0, (Date.now() - jumpAt) / 1000) : null;
+  return {
+    suspected,
+    confirmed: suspected && age >= ABNORMAL_WINDOW_SEC,
+    max_jump_cm: round(maxJump),
+    baseline_cm: suspected ? round(baseline) : null,
+    age_seconds: round(age, 1)
+  };
 }
 
 async function buildFloodForecast(options = {}) {
@@ -100,21 +114,23 @@ async function buildFloodForecast(options = {}) {
     buildTideForecast({ simTimeScale: scale })
   ]);
 
-  const valid = rows.filter(r => Number(r.jsn_valid) === 1 && Number.isFinite(Number(r.water_level_cm)));
+  const valid = rows.filter(r => Number(r.jsn_valid) === 1 && Number.isFinite(num(r.water_level_cm)));
   if (valid.length < 2) {
     return { available: false, reason: "NO_VALID_ROAD_LEVEL", message: "Chua du du lieu muc nuoc duong Node 1 de du bao ngap.", rain_forecast: rain, tide_forecast: tide };
   }
 
   const latest = valid[valid.length - 1];
-  const current = Number(latest.water_level_cm);
+  const current = num(latest.water_level_cm);
   const roadSlope = regression(valid);
-  const currentTide = tide?.available ? Number(tide.current?.tide_level_cm) : null;
-  const tideForecastMap = new Map((tide?.forecast || []).map(x => [Number(x.horizon_sim_hours), Number(x.level_cm)]));
-  const maxTideForecast = tide?.available ? Math.max(Number.isFinite(currentTide) ? currentTide : -Infinity, ...(tide.forecast || []).map(x => Number(x.level_cm)).filter(Number.isFinite)) : null;
+  const currentTide = tide?.available ? num(tide.current?.tide_level_cm) : null;
+  const tideForecastMap = new Map((tide?.forecast || []).map(x => [Number(x.horizon_sim_hours), num(x.level_cm)]));
+  const maxTideForecast = tide?.available ? Math.max(Number.isFinite(currentTide) ? currentTide : -Infinity, ...(tide.forecast || []).map(x => num(x.level_cm)).filter(Number.isFinite)) : null;
   const rainRelevant = Boolean(rain?.rain_active || (Number(rain?.rain_risk_score) || 0) >= 56);
   const tideRelevant = Boolean(tide?.available && Number.isFinite(maxTideForecast) && maxTideForecast >= TIDE_HIGH_CM);
   const abnormal = detectAbnormal(valid, rainRelevant, tideRelevant);
   const rStrength = rainStrength(rain);
+
+  const forecastBase = abnormal.suspected && Number.isFinite(abnormal.baseline_cm) ? abnormal.baseline_cm : current;
 
   const forecast = [1, 2, 3].map(h => {
     const realMin = h * 60 / scale;
@@ -125,10 +141,10 @@ async function buildFloodForecast(options = {}) {
     const tideRise = Number.isFinite(tf) && Number.isFinite(currentTide) ? Math.max(0, tf - currentTide) : 0;
     const tideHighExtra = Number.isFinite(tf) ? Math.max(0, tf - TIDE_HIGH_CM) * 0.10 : 0;
     const tideContribution = tideRise * TIDE_COUPLING + tideHighExtra;
-    let level = Math.max(0, current + trendContribution + rainContribution + tideContribution);
+    let level = Math.max(0, forecastBase + trendContribution + rainContribution + tideContribution);
 
     if (abnormal.suspected && !rainRelevant && !tideRelevant) {
-      level = Math.min(level, current + 0.5);
+      level = Math.min(level, forecastBase + 0.5);
     }
 
     return {
@@ -144,12 +160,12 @@ async function buildFloodForecast(options = {}) {
     };
   });
 
-  let overall = alertFromLevel(current);
+  const currentAlert = abnormal.suspected && !rainRelevant && !tideRelevant ? "WATCH" : alertFromLevel(current);
+  let overall = currentAlert;
   for (const f of forecast) overall = maxAlert(overall, f.alert_level);
   const firstWarning = forecast.find(f => ["WARNING", "DANGER"].includes(f.alert_level)) || null;
   const earlyWarning = current < WARNING_CM && Boolean(firstWarning);
   const cause = classifyCause({ rainRelevant, tideRelevant, abnormal: abnormal.suspected });
-  const currentAlert = alertFromLevel(current);
 
   const dataQuality = clamp(valid.length / Math.max(6, roadMinutes * 6), 0, 1);
   const rainConf = rain?.available ? Number(rain.confidence) || 0.3 : 0.2;
@@ -177,6 +193,9 @@ async function buildFloodForecast(options = {}) {
       rain_relevant: rainRelevant,
       tide_relevant: tideRelevant,
       sensor_abnormal_suspected: abnormal.suspected,
+      sensor_abnormal_confirmed: abnormal.confirmed,
+      abnormal_age_seconds: abnormal.age_seconds,
+      abnormal_baseline_cm: abnormal.baseline_cm,
       max_recent_jump_cm: abnormal.max_jump_cm
     },
     thresholds_cm: { watch: WATCH_CM, warning: WARNING_CM, danger: DANGER_CM, tide_high: TIDE_HIGH_CM },
