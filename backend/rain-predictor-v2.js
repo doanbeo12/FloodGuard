@@ -7,7 +7,7 @@ function safeDb(name) {
 function clamp(v, a, b) { return Math.min(b, Math.max(a, v)); }
 function mean(a) { const v = a.filter(Number.isFinite); return v.length ? v.reduce((s, x) => s + x, 0) / v.length : null; }
 function median(a) { const v = a.filter(Number.isFinite).slice().sort((x, y) => x - y); if (!v.length) return null; const m = Math.floor(v.length / 2); return v.length % 2 ? v[m] : (v[m - 1] + v[m]) / 2; }
-function round(v, n = 2) { return Number.isFinite(v) ? Number(v.toFixed(n)) : null; }
+function round(v, n = 2) { return Number.isFinite(v) ? Number(v.toFixed(n)) : null; }\nfunction num(v) { if (v === null || v === undefined || v === "") return null; const n = Number(v); return Number.isFinite(n) ? n : null; }
 
 const DB = safeDb(process.env.V2_DB_NAME || "floodguard_v2");
 const WINDOW_MIN = clamp(Number(process.env.RAIN_PREDICTOR_WINDOW_MINUTES || 15), 5, 60);
@@ -17,7 +17,7 @@ const ACTIVE_LOOKBACK_SEC = Math.max(30, Number(process.env.RAIN_ACTIVE_LOOKBACK
 
 function regression(rows, field) {
   const pts = rows
-    .map(r => ({ t: new Date(r.recorded_at).getTime(), v: Number(r[field]) }))
+    .map(r => ({ t: new Date(r.recorded_at).getTime(), v: num(r[field]) }))
     .filter(p => Number.isFinite(p.t) && Number.isFinite(p.v));
   if (pts.length < 3) return 0;
   const t0 = pts[0].t;
@@ -57,10 +57,12 @@ function scorePressure(slope) {
 
 function scoreDewSpread(current, slope) {
   let s = 0;
-  if (current <= 1.0) s += 16;
-  else if (current <= 2.0) s += 13;
-  else if (current <= 3.0) s += 9;
-  else if (current <= 4.5) s += 5;
+  if (Number.isFinite(current)) {
+    if (current <= 1.0) s += 16;
+    else if (current <= 2.0) s += 13;
+    else if (current <= 3.0) s += 9;
+    else if (current <= 4.5) s += 5;
+  }
   const closing = -slope;
   if (closing >= 0.25) s += 9;
   else if (closing >= 0.12) s += 6;
@@ -130,18 +132,18 @@ async function buildRainForecast(options = {}) {
   const rainSensorWet = recent.some(r => Number(r.rain_detected) === 1);
   const rainActive = rainSensorWet || recentTips > 0;
 
-  const temp = Number(latest.temperature_c);
-  const humidity = Number(latest.humidity_pct);
-  const pressure = Number(latest.pressure_hpa);
-  const dewSpread = Number(latest.dew_spread_c);
-  const wind = Number(latest.wind_rpm);
+  const temp = num(latest.temperature_c);
+  const humidity = num(latest.humidity_pct);
+  const pressure = num(latest.pressure_hpa);
+  const dewSpread = num(latest.dew_spread_c);
+  const wind = num(latest.wind_rpm);
 
   const humiditySlope = regression(rows, "humidity_pct");
   const pressureSlope = regression(rows, "pressure_hpa");
   const tempSlope = regression(rows, "temperature_c");
   const dewSlope = regression(rows, "dew_spread_c");
   const windSlope = regression(rows, "wind_rpm");
-  const firstHalfWind = median(rows.slice(0, Math.max(1, Math.floor(rows.length / 2))).map(r => Number(r.wind_rpm)));
+  const firstHalfWind = median(rows.slice(0, Math.max(1, Math.floor(rows.length / 2))).map(r => num(r.wind_rpm)));
 
   const components = {
     humidity: scoreHumidity(humidity, humiditySlope),
@@ -156,7 +158,7 @@ async function buildRainForecast(options = {}) {
 
   const validAht = rows.filter(r => Number(r.aht_valid) === 1).length / rows.length;
   const validBmp = rows.filter(r => Number(r.bmp_valid) === 1).length / rows.length;
-  const hasWind = rows.filter(r => Number.isFinite(Number(r.wind_rpm))).length / rows.length;
+  const hasWind = rows.filter(r => Number.isFinite(num(r.wind_rpm))).length / rows.length;
   const spanMin = (new Date(rows[rows.length - 1].recorded_at) - new Date(rows[0].recorded_at)) / 60000;
   const completeness = clamp(rows.length / Math.max(6, Math.floor(minutes * 60 / SAMPLE_SEC * 0.5)), 0, 1);
   const confidence = clamp(0.30 * validAht + 0.30 * validBmp + 0.15 * hasWind + 0.15 * clamp(spanMin / minutes, 0, 1) + 0.10 * completeness, 0.05, 0.98);
