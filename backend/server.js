@@ -22,7 +22,7 @@ const { getReliableWaterTrend } = require("./water-trend");
 
 const app = express();
 const PORT = Number(process.env.PORT || 3001);
-const API_VERSION = "1.12.0-rain-flood-forecast";
+const API_VERSION = "1.12.0-rain-flood-forecast"; // UI v2 compatible
 const CENTRAL_TIMEOUT_MS = Number(process.env.CENTRAL_TIMEOUT_MS || 20000);
 
 app.use(cors());
