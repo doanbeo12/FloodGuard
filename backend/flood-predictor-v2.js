@@ -6,7 +6,8 @@ require("dotenv").config();
 function safeDb(name) { return /^[A-Za-z0-9_]+$/.test(String(name || "")) ? String(name) : "floodguard_v2"; }
 function clamp(v, a, b) { return Math.min(b, Math.max(a, v)); }
 function mean(a) { const v = a.filter(Number.isFinite); return v.length ? v.reduce((s, x) => s + x, 0) / v.length : null; }
-function round(v, n = 2) { return Number.isFinite(v) ? Number(v.toFixed(n)) : null; }\nfunction num(v) { if (v === null || v === undefined || v === "") return null; const n = Number(v); return Number.isFinite(n) ? n : null; }
+function round(v, n = 2) { return Number.isFinite(v) ? Number(v.toFixed(n)) : null; }
+function num(v) { if (v === null || v === undefined || v === "") return null; const n = Number(v); return Number.isFinite(n) ? n : null; }
 
 const DB = safeDb(process.env.V2_DB_NAME || "floodguard_v2");
 const SCALE = Math.max(1, Number(process.env.FORECAST_SIM_TIME_SCALE || process.env.TIDE_SIM_TIME_SCALE || 60));
