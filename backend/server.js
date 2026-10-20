@@ -4,6 +4,8 @@ require("dotenv").config();
 
 const { pool, checkDatabase } = require("./db");
 const { startMqttCollector } = require("./mqtt-collector");
+const { startMqttCollectorV2 } = require("./mqtt-collector-v2");
+const { createV2Router } = require("./api-v2");
 const {
     refreshTideData,
     getHcmcTideSummary,
@@ -25,6 +27,7 @@ const CENTRAL_TIMEOUT_MS = Number(process.env.CENTRAL_TIMEOUT_MS || 20000);
 
 app.use(cors());
 app.use(express.json());
+app.use("/api/v2", createV2Router());
 
 function clampLimit(value, fallback = 300, max = 2000) {
     const parsed = Number(value);
@@ -722,6 +725,13 @@ app.listen(PORT, async () => {
         startMqttCollector();
     } else {
         console.log("[MQTT] Collector disabled by MQTT_ENABLED=false");
+    }
+
+    const mqttV2Enabled = String(process.env.MQTT_V2_ENABLED ?? "true").toLowerCase() !== "false";
+    if (mqttV2Enabled) {
+        startMqttCollectorV2();
+    } else {
+        console.log("[MQTT v2] Collector disabled by MQTT_V2_ENABLED=false");
     }
 
     startTideScheduler();
