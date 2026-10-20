@@ -7,7 +7,8 @@ function safeDb(name) {
 function clamp(v, a, b) { return Math.min(b, Math.max(a, v)); }
 function mean(a) { const v = a.filter(Number.isFinite); return v.length ? v.reduce((s, x) => s + x, 0) / v.length : null; }
 function median(a) { const v = a.filter(Number.isFinite).slice().sort((x, y) => x - y); if (!v.length) return null; const m = Math.floor(v.length / 2); return v.length % 2 ? v[m] : (v[m - 1] + v[m]) / 2; }
-function round(v, n = 2) { return Number.isFinite(v) ? Number(v.toFixed(n)) : null; }\nfunction num(v) { if (v === null || v === undefined || v === "") return null; const n = Number(v); return Number.isFinite(n) ? n : null; }
+function round(v, n = 2) { return Number.isFinite(v) ? Number(v.toFixed(n)) : null; }
+function num(v) { if (v === null || v === undefined || v === "") return null; const n = Number(v); return Number.isFinite(n) ? n : null; }
 
 const DB = safeDb(process.env.V2_DB_NAME || "floodguard_v2");
 const WINDOW_MIN = clamp(Number(process.env.RAIN_PREDICTOR_WINDOW_MINUTES || 15), 5, 60);
