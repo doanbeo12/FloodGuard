@@ -1,8 +1,8 @@
 {
   "name": "flood-monitoring-backend",
-  "version": "1.11.0",
+  "version": "1.12.0",
   "private": true,
-  "description": "MQTT + MySQL backend with FloodGuard v2 sensor-only tide forecasting",
+  "description": "MQTT + MySQL backend with FloodGuard v2 sensor-only tide, rain forecasting and flood early warning",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
