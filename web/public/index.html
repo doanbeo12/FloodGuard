@@ -1,398 +1,142 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="vi">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Flood Monitoring Dashboard v1.5.4</title>
-
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.6.0/css/all.min.css">
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
-
-    <link rel="stylesheet" href="css/style.css">
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>FloodGuard - Giám sát và cảnh báo ngập</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.6.0/css/all.min.css">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
-<div class="container-fluid dashboard-shell">
-    <header class="dashboard-header">
-        <div>
-            <div class="eyebrow">IoT FLOOD MONITORING</div>
-            <h1>HỆ THỐNG CẢNH BÁO SỚM NGẬP LỤT TRIỀU CƯỜNG ĐÔ THỊ</h1>
-            <p>Mai Khắc Đoàn - Nguyễn Hoàng Duy</p>
+<div class="app-shell">
+  <header class="topbar">
+    <div>
+      <div class="eyebrow">FLOODGUARD</div>
+      <h1>Hệ thống giám sát, dự báo và cảnh báo ngập</h1>
+      <p>Trạm mưa - ngập đường • Trạm triều • Trạm trung tâm</p>
+    </div>
+    <div class="topbar-right">
+      <div id="clock" class="clock">--:--:--</div>
+      <div class="status-row">
+        <span id="apiBadge" class="status-pill muted">Máy chủ: đang kiểm tra</span>
+        <span id="station1Badge" class="status-pill muted">Trạm mưa: --</span>
+        <span id="station2Badge" class="status-pill muted">Trạm triều: --</span>
+      </div>
+    </div>
+  </header>
+
+  <main>
+    <section class="hero-grid">
+      <article class="panel hero-card">
+        <div class="card-kicker">MỰC NƯỚC ĐƯỜNG</div>
+        <div class="hero-value"><span id="roadLevel">--</span><small>cm</small></div>
+        <div class="hero-meta"><span id="roadTrend">Chưa có dữ liệu</span><span id="roadUpdated">--</span></div>
+      </article>
+
+      <article class="panel hero-card">
+        <div class="card-kicker">MỰC TRIỀU</div>
+        <div class="hero-value"><span id="tideLevel">--</span><small>cm</small></div>
+        <div class="hero-meta"><span id="tideTrend">Chưa có dữ liệu</span><span id="tideUpdated">--</span></div>
+      </article>
+
+      <article class="panel hero-card">
+        <div class="card-kicker">TRẠNG THÁI MƯA</div>
+        <div id="rainState" class="state-value">--</div>
+        <div class="hero-meta"><span id="tipsInterval">Gàu lật: --</span><span id="tipsTotal">Tổng: --</span></div>
+      </article>
+
+      <article id="warningCard" class="panel warning-card normal">
+        <div class="card-kicker">CẢNH BÁO NGẬP</div>
+        <div id="warningLevel" class="warning-title">CHỜ DỮ LIỆU</div>
+        <div id="warningMessage" class="warning-message">Hệ thống đang chờ dữ liệu dự báo.</div>
+        <div class="warning-foot"><span id="warningCause">Nguyên nhân: --</span><span id="warningConfidence">Tin cậy: --</span></div>
+      </article>
+    </section>
+
+    <section class="section-block">
+      <div class="section-heading">
+        <div><div class="eyebrow">TRẠM MƯA VÀ NGẬP ĐƯỜNG</div><h2>Điều kiện môi trường hiện tại</h2></div>
+      </div>
+      <div class="metric-grid">
+        <article class="metric-card"><span>Nhiệt độ</span><strong id="temperature">-- °C</strong><small id="temperatureTrend">Xu hướng: --</small></article>
+        <article class="metric-card"><span>Độ ẩm</span><strong id="humidity">-- %</strong><small id="humidityTrend">Xu hướng: --</small></article>
+        <article class="metric-card"><span>Áp suất</span><strong id="pressure">-- hPa</strong><small id="pressureTrend">Xu hướng: --</small></article>
+        <article class="metric-card"><span>Chênh lệch điểm sương</span><strong id="dewSpread">-- °C</strong><small id="dewTrend">Xu hướng: --</small></article>
+        <article class="metric-card"><span>Tốc độ quay cốc gió</span><strong id="windRpm">-- RPM</strong><small id="windTrend">Xu hướng: --</small></article>
+        <article class="metric-card"><span>Cảm biến mưa</span><strong id="rainSensor">--</strong><small>Dùng để xác nhận mưa đã bắt đầu</small></article>
+      </div>
+    </section>
+
+    <section class="forecast-grid section-block">
+      <article class="panel forecast-panel">
+        <div class="panel-head">
+          <div><div class="eyebrow">DỰ BÁO MƯA</div><h2>Nguy cơ mưa trong thời gian tới</h2></div>
+          <span id="rainRiskBadge" class="status-pill muted">--</span>
         </div>
-        <div class="header-status text-end">
-            <div id="clock" class="clock">--</div>
-            <div class="status-badges">
-                <span id="mqttStatusBadge" class="badge bg-secondary">MQTT: Đang kết nối</span>
-                <span id="centralStatusBadge" class="badge bg-secondary">Central: Chờ dữ liệu</span>
-                <span id="apiStatusBadge" class="badge bg-secondary">Database API: Chưa kiểm tra</span>
-            </div>
+        <div class="forecast-main">
+          <div><div class="big-number" id="rainScore">--</div><div class="big-caption">điểm nguy cơ / 100</div></div>
+          <div class="forecast-summary">
+            <div><span>Thời điểm dự kiến</span><strong id="rainOnset">--</strong></div>
+            <div><span>Độ tin cậy</span><strong id="rainConfidence">--</strong></div>
+            <div><span>Trạng thái</span><strong id="rainForecastStatus">--</strong></div>
+          </div>
         </div>
-    </header>
+        <div id="rainNoData" class="empty-note d-none">Chưa đủ dữ liệu môi trường để dự báo mưa.</div>
+      </article>
 
-    <nav class="dashboard-nav">
-        <a class="dashboard-nav-link active" href="#realtimeSection"><i class="fa-solid fa-gauge-high"></i> Realtime</a>
-        <a class="dashboard-nav-link" href="#tideSection"><i class="fa-solid fa-water"></i> Triều & thời tiết tham khảo</a>
-        <a class="dashboard-nav-link" href="#historySection"><i class="fa-solid fa-clock-rotate-left"></i> Lịch sử</a>
-    </nav>
+      <article class="panel forecast-panel">
+        <div class="panel-head">
+          <div><div class="eyebrow">DỰ BÁO TRIỀU</div><h2>Mực triều +1 giờ, +2 giờ, +3 giờ</h2></div>
+          <span id="tideConfidenceBadge" class="status-pill muted">--</span>
+        </div>
+        <div id="tideForecastRows" class="forecast-list">
+          <div class="forecast-row"><span>+1 giờ</span><strong>-- cm</strong></div>
+          <div class="forecast-row"><span>+2 giờ</span><strong>-- cm</strong></div>
+          <div class="forecast-row"><span>+3 giờ</span><strong>-- cm</strong></div>
+        </div>
+        <div id="tideCycleInfo" class="subtle-note">Chu kỳ học được: --</div>
+        <div id="tideNoData" class="empty-note d-none">Chưa đủ lịch sử mực triều để tạo dự báo.</div>
+      </article>
 
-    <main>
-        <section id="realtimeSection">
-            <div class="row g-4 mt-1">
-                <div class="col-xl-3 col-md-6">
-                    <article class="dashboard-card node-card">
-                        <div class="card-header-custom">
-                            <span><i class="fa-solid fa-tower-broadcast"></i> NODE 1</span>
-                            <span id="node1StatusBadge" class="badge bg-secondary">Chờ dữ liệu</span>
-                        </div>
-                        <div class="node-label">Mực nước</div>
-                        <div class="node-value" id="node1WaterLevel">-- cm</div>
-                        <div class="progress water-progress" title="Thang trực quan 0–20 cm">
-                            <div id="node1Bar" class="progress-bar" style="width:0%">--</div>
-                        </div>
-                        <div class="node-info">
-                            <div><span>Khoảng cách</span><strong id="node1Distance">-- cm</strong></div>
-                            <div><span>Phép đo</span><strong id="node1Validity">--</strong></div>
-                            <div><span>Cập nhật</span><strong id="node1Time">--:--:--</strong></div>
-                        </div>
-                    </article>
-                </div>
+      <article class="panel forecast-panel flood-panel">
+        <div class="panel-head">
+          <div><div class="eyebrow">DỰ BÁO NGẬP</div><h2>Mực nước đường dự báo</h2></div>
+          <span id="floodBadge" class="status-pill muted">--</span>
+        </div>
+        <div id="floodForecastRows" class="forecast-list">
+          <div class="forecast-row"><span>+1 giờ</span><strong>-- cm</strong><em>--</em></div>
+          <div class="forecast-row"><span>+2 giờ</span><strong>-- cm</strong><em>--</em></div>
+          <div class="forecast-row"><span>+3 giờ</span><strong>-- cm</strong><em>--</em></div>
+        </div>
+        <div id="earlyWarningText" class="early-warning-note">Cảnh báo sớm: --</div>
+        <div id="floodNoData" class="empty-note d-none">Chưa đủ dữ liệu mực nước đường để dự báo ngập.</div>
+      </article>
+    </section>
 
-                <div class="col-xl-3 col-md-6">
-                    <article class="dashboard-card node-card">
-                        <div class="card-header-custom">
-                            <span><i class="fa-solid fa-tower-broadcast"></i> NODE 2</span>
-                            <span id="node2StatusBadge" class="badge bg-secondary">Chờ dữ liệu</span>
-                        </div>
-                        <div class="node-label">Mực nước</div>
-                        <div class="node-value" id="node2WaterLevel">-- cm</div>
-                        <div class="progress water-progress" title="Thang trực quan 0–20 cm">
-                            <div id="node2Bar" class="progress-bar" style="width:0%">--</div>
-                        </div>
-                        <div class="node-info">
-                            <div><span>Khoảng cách</span><strong id="node2Distance">-- cm</strong></div>
-                            <div><span>Phép đo</span><strong id="node2Validity">--</strong></div>
-                            <div><span>Cập nhật</span><strong id="node2Time">--:--:--</strong></div>
-                        </div>
-                    </article>
-                </div>
+    <section class="section-block">
+      <div class="section-heading">
+        <div><div class="eyebrow">LỊCH SỬ GẦN ĐÂY</div><h2>Mực nước đường và mực triều</h2></div>
+        <button id="refreshBtn" class="btn btn-sm btn-outline-primary"><i class="fa-solid fa-rotate"></i> Làm mới</button>
+      </div>
+      <article class="panel chart-panel"><canvas id="waterChart"></canvas></article>
+    </section>
 
-                <div class="col-xl-3 col-md-6">
-                    <article class="dashboard-card max-card">
-                        <div class="card-header-custom">
-                            <span><i class="fa-solid fa-water"></i> MỰC NƯỚC CAO NHẤT</span>
-                            <span id="alertLevelBadge" class="badge bg-secondary">WAIT</span>
-                        </div>
-                        <div class="node-label">Max Water Level</div>
-                        <div class="node-value" id="maxWaterLevel">-- cm</div>
-                        <div class="threshold-scale">
-                            <span>3</span><span>7</span><span>10</span><span>15 cm</span>
-                        </div>
-                        <div class="level-track">
-                            <div id="maxLevelMarker" class="level-marker" style="left:0%"></div>
-                        </div>
-                        <div class="node-info compact">
-                            <div><span>Mức cảnh báo</span><strong id="alertLevelText">--</strong></div>
-                            <div><span>Giám sát</span><strong id="monitoringState">--</strong></div>
-                        </div>
-                    </article>
-                </div>
-
-                <div class="col-xl-3 col-md-6">
-                    <article class="dashboard-card environment-card">
-                        <div class="card-header-custom">
-                            <span><i class="fa-solid fa-cloud-rain"></i> MƯA & KẾT NỐI</span>
-                            <span id="rainBadge" class="badge bg-secondary rain-status-badge">--</span>
-                        </div>
-                        <div class="environment-grid">
-                            <div class="environment-item rain-environment-item">
-                                <span>Trạng thái mưa (Node 1)</span>
-                                <strong id="rainStatus" class="rain-status-text">--</strong>
-                            </div>
-                            <div class="environment-item">
-                                <span>MQTT Browser</span>
-                                <strong id="mqttTextStatus">Đang kết nối</strong>
-                            </div>
-                            <div class="environment-item">
-                                <span>Central</span>
-                                <strong id="centralTextStatus">Chờ dữ liệu</strong>
-                            </div>
-                            <div class="environment-item">
-                                <span>Database API</span>
-                                <strong id="apiTextStatus">Chưa kiểm tra</strong>
-                            </div>
-                        </div>
-                    </article>
-                </div>
-            </div>
-
-            <section id="alertPanel" class="alert-panel alert-offline mt-4">
-                <div class="alert-icon" id="alertIcon">…</div>
-                <div class="alert-content">
-                    <div class="alert-topline">
-                        <div>
-                            <div class="alert-kicker">TRẠNG THÁI HIỆN TẠI</div>
-                            <div class="alert-title" id="alertTitle">ĐANG CHỜ DỮ LIỆU</div>
-                        </div>
-                        <code id="scenarioCode" class="scenario-code">WAITING</code>
-                    </div>
-                    <div class="alert-message" id="alertMessage">Dashboard chưa nhận bản tin MQTT mới từ ESP32 Central.</div>
-                    <div class="alert-detail-grid">
-                        <div><span>Node 1</span><strong id="scenarioNode1">-- cm</strong></div>
-                        <div><span>Node 2</span><strong id="scenarioNode2">-- cm</strong></div>
-                        <div><span>Chênh lệch</span><strong id="nodeDifference">-- cm</strong></div>
-                        <div><span>Cập nhật</span><strong id="alertTime">--:--:--</strong></div>
-                    </div>
-                </div>
-            </section>
-
-
-            <section id="hypothesisConclusionCard" class="dashboard-card hypothesis-card mt-4">
-                <div class="card-header-custom">
-                    <span><i class="fa-solid fa-flask-vial"></i> ĐỐI CHIẾU TÌNH HUỐNG T01–T26</span>
-                    <span id="hypothesisBadge" class="badge bg-secondary">CHỜ DỮ LIỆU</span>
-                </div>
-                <div class="hypothesis-layout">
-                    <div class="hypothesis-primary">
-                        <div class="node-label">Tình huống phù hợp nhất</div>
-                        <div id="hypothesisTestCode" class="hypothesis-code">T--</div>
-                        <div id="hypothesisTitle" class="hypothesis-title">Chưa đủ dữ liệu để đối chiếu</div>
-                        <div id="hypothesisConclusion" class="hypothesis-conclusion">Hệ thống sẽ tự so sánh dữ liệu hiện tại với các tình huống kiểm thử T01–T26.</div>
-                    </div>
-                    <div class="hypothesis-evidence">
-                        <div><span>Dấu hiệu quan sát</span><strong id="hypothesisEvidence">--</strong></div>
-                        <div><span>Mức phù hợp</span><strong id="hypothesisConfidence">--</strong></div>
-                        <div><span>Tình huống liên quan</span><strong id="hypothesisRelated">--</strong></div>
-                        <div><span>Cập nhật</span><strong id="hypothesisTime">--:--:--</strong></div>
-                    </div>
-                </div>
-                <details class="scenario-catalog mt-3">
-                    <summary>Xem giải thích T01–T26</summary>
-                    <div id="testCaseCatalog" class="scenario-catalog-grid"></div>
-                </details>
-            </section>
-
-            <section id="tideSection" class="mt-4 tide-section">
-                <div class="row g-4">
-                    <div class="col-xl-4">
-                        <article id="earlyWarningCard" class="dashboard-card early-warning-card warning-limited h-100">
-                            <div class="card-header-custom">
-                                <span><i class="fa-solid fa-triangle-exclamation"></i> CẢNH BÁO TỔNG HỢP CẢM BIẾN + TRIỀU</span>
-                                <span id="earlyWarningBadge" class="badge bg-secondary">CHỜ DỮ LIỆU</span>
-                            </div>
-                            <div class="early-warning-main sensor-warning-layout">
-                                <div class="risk-block">
-                                    <div class="node-label">Trạng thái</div>
-                                    <div id="earlyWarningRisk" class="risk-value">--</div>
-                                    <div id="earlyWarningMessage" class="risk-message">Đang chờ dữ liệu xu hướng mực nước từ Central.</div>
-                                </div>
-                                <div class="trend-block">
-                                    <div class="trend-metric"><span>Tốc độ mực nước</span><strong id="waterRate">-- cm/phút</strong></div>
-                                    <div class="trend-metric"><span>Xu hướng</span><strong id="waterTrend">--</strong></div>
-                                    <div class="trend-metric"><span>Ngưỡng tiếp theo</span><strong id="nextThreshold">-- cm</strong></div>
-                                    <div class="trend-metric"><span>ETA tới ngưỡng</span><strong id="etaNext">--</strong></div>
-                                    <div class="trend-metric"><span>Hướng lan 2 node</span><strong id="flowDirection">--</strong></div>
-                                    <div class="trend-metric"><span>Triều dùng phân tích</span><strong id="combinedTideInfo">--</strong></div>
-                                </div>
-                            </div>
-                        </article>
-                    </div>
-
-                    <div class="col-xl-4">
-                        <article class="dashboard-card tide-card h-100">
-                            <div class="card-header-custom">
-                                <span><i class="fa-solid fa-water"></i> DỰ BÁO TRIỀU TP.HCM</span>
-                                <span id="tideStatusBadge" class="badge bg-secondary">ĐANG TẢI</span>
-                            </div>
-                            <div class="tide-hero">
-                                <div>
-                                    <div class="node-label">Đỉnh triều gần nhất / tiếp theo</div>
-                                    <div class="node-value tide-value" id="tidePeakLevel">-- m</div>
-                                </div>
-                                <div class="tide-time-box"><span>Thời gian</span><strong id="tidePeakTime">--</strong></div>
-                            </div>
-                            <div class="node-info compact">
-                                <div><span>Ngày đỉnh tiếp theo</span><strong id="tidePeakDate">--</strong></div>
-                                <div><span>Còn tới đỉnh</span><strong id="tideCountdown">--</strong></div>
-                                <div><span>Mức triều</span><strong id="tideRiskBand">--</strong></div>
-                                <div><span>Bản tin nguồn</span><strong id="tideBulletinDate">--</strong></div>
-                            </div>
-                            <div id="tideFreshnessNotice" class="tide-notice mt-3">Đang kiểm tra dữ liệu triều tự động...</div>
-                            <div class="tide-actions">
-                                <button id="refreshTideBtn" class="btn btn-sm btn-outline-primary"><i class="fa-solid fa-rotate"></i> Làm mới</button>
-                                <button id="tideDemoBtn" class="btn btn-sm btn-outline-danger" type="button" aria-pressed="false">
-                                    <i class="fa-solid fa-flask"></i> Giả lập triều cao
-                                </button>
-                                <a id="tideSourceLink" class="btn btn-sm btn-outline-secondary disabled" href="#" target="_blank" rel="noopener noreferrer"><i class="fa-solid fa-arrow-up-right-from-square"></i> Nguồn</a>
-                            </div>
-                            <div class="tide-forecast-table-wrap mt-3">
-                                <table class="table table-sm mb-0">
-                                    <thead><tr><th>Ngày</th><th>Đỉnh</th><th>Giờ</th></tr></thead>
-                                    <tbody id="tideForecastBody"><tr><td colspan="3" class="text-muted text-center">Chưa có dữ liệu.</td></tr></tbody>
-                                </table>
-                            </div>
-                        </article>
-                    </div>
-
-                    <div class="col-xl-4">
-                        <article class="dashboard-card weather-card h-100">
-                            <div class="card-header-custom">
-                                <span><i class="fa-solid fa-cloud-sun-rain"></i> DỰ BÁO THỜI TIẾT TP.HCM</span>
-                                <span id="weatherStatusBadge" class="badge bg-secondary">ĐANG TẢI</span>
-                            </div>
-                            <div class="weather-hero">
-                                <div>
-                                    <div class="node-label">Nhiệt độ hiện tại</div>
-                                    <div id="weatherTemp" class="node-value tide-value">-- °C</div>
-                                </div>
-                                <div class="tide-time-box"><span>Xác suất mưa 3h tới</span><strong id="weatherRainProb">-- %</strong></div>
-                            </div>
-                            <div class="node-info compact">
-                                <div><span>Độ ẩm</span><strong id="weatherHumidity">-- %</strong></div>
-                                <div><span>Lượng mưa hiện tại</span><strong id="weatherPrecip">-- mm</strong></div>
-                                <div><span>Mưa dự báo 3h</span><strong id="weatherForecastRain">-- mm</strong></div>
-                                <div><span>Trạng thái</span><strong id="weatherSummary">--</strong></div>
-                                <div><span>Nguồn</span><strong id="weatherProvider">OpenWeather</strong></div>
-                                <div><span>Cập nhật</span><strong id="weatherUpdated">--</strong></div>
-                            </div>
-                        </article>
-                    </div>
-                </div>
-            </section>
-
-            <div class="row g-4 mt-1">
-                <div class="col-xl-8">
-                    <section class="dashboard-box">
-                        <div class="box-title"><i class="fa-solid fa-chart-line"></i> Biểu đồ mực nước thời gian thực</div>
-                        <div class="chart-container"><canvas id="waterChart"></canvas></div>
-                        <div class="threshold-legend">
-                            <span><b>3 cm</b> Mức 1</span>
-                            <span><b>7 cm</b> Nguy cơ mức 2</span>
-                            <span><b>10 cm</b> Mức 2</span>
-                            <span><b>15 cm</b> Mức 3</span>
-                        </div>
-                    </section>
-                </div>
-                <div class="col-xl-4">
-                    <section class="dashboard-box h-100">
-                        <div class="box-title"><i class="fa-solid fa-list"></i> Sự kiện gần đây</div>
-                        <div class="event-list-wrap">
-                            <table class="table table-hover align-middle event-table mb-0">
-                                <thead><tr><th>Time</th><th>Sự kiện</th><th>Status</th></tr></thead>
-                                <tbody id="eventTableBody">
-                                    <tr><td>--:--:--</td><td>Dashboard khởi động</td><td><span class="badge bg-secondary">WAIT</span></td></tr>
-                                </tbody>
-                            </table>
-                        </div>
-                    </section>
-                </div>
-            </div>
-
-            <section class="dashboard-box mt-4">
-                <div class="box-title"><i class="fa-solid fa-server"></i> Trạng thái thiết bị</div>
-                <div class="table-responsive">
-                    <table class="table align-middle mb-0">
-                        <thead><tr><th>Thiết bị</th><th>Trạng thái</th><th>Phép đo</th><th>Giá trị</th><th>Cập nhật</th></tr></thead>
-                        <tbody>
-                            <tr><td>Node 1</td><td id="deviceNode1Status">⚪ Chờ dữ liệu</td><td id="deviceNode1Valid">--</td><td id="deviceNode1Value">--</td><td id="deviceNode1Time">--:--:--</td></tr>
-                            <tr><td>Node 2</td><td id="deviceNode2Status">⚪ Chờ dữ liệu</td><td id="deviceNode2Valid">--</td><td id="deviceNode2Value">--</td><td id="deviceNode2Time">--:--:--</td></tr>
-                            <tr><td>Central</td><td id="deviceCentralStatus">⚪ Chờ dữ liệu</td><td>--</td><td id="deviceCentralValue">MQTT</td><td id="deviceCentralTime">--:--:--</td></tr>
-                        </tbody>
-                    </table>
-                </div>
-            </section>
-        </section>
-
-        <section id="historySection" class="dashboard-box mt-4 history-section">
-            <div class="box-title history-title-row">
-                <span><i class="fa-solid fa-database"></i> Lịch sử hệ thống</span>
-                
-            </div>
-
-            <div class="history-controls">
-                <div>
-                    <label for="historyFrom">Từ ngày</label>
-                    <input id="historyFrom" type="date" class="form-control">
-                </div>
-                <div>
-                    <label for="historyTo">Đến ngày</label>
-                    <input id="historyTo" type="date" class="form-control">
-                </div>
-                <div>
-                    <label for="historyLimit">Số bản ghi</label>
-                    <select id="historyLimit" class="form-select">
-                        <option value="100">100</option>
-                        <option value="300" selected>300</option>
-                        <option value="500">500</option>
-                        <option value="1000">1000</option>
-                    </select>
-                </div>
-                <div class="history-control-actions">
-                    <button id="loadHistoryBtn" class="btn btn-primary"><i class="fa-solid fa-magnifying-glass"></i> Xem lịch sử</button>
-                    <button id="exportHistoryBtn" class="btn btn-outline-secondary"><i class="fa-solid fa-file-csv"></i> Xuất CSV</button>
-                </div>
-            </div>
-
-            <div id="historyNotice" class="history-notice">Chọn khoảng thời gian rồi bấm <strong>Xem lịch sử</strong>.</div>
-
-            <div class="history-tabs">
-                <button class="history-tab active" data-history-tab="sensors"><i class="fa-solid fa-wave-square"></i> Dữ liệu cảm biến</button>
-                <button class="history-tab" data-history-tab="events"><i class="fa-solid fa-bell"></i> Event Log</button>
-                <button class="history-tab" data-history-tab="devices"><i class="fa-solid fa-microchip"></i> Trạng thái thiết bị</button>
-                <button class="history-tab" data-history-tab="tide"><i class="fa-solid fa-water"></i> Dữ liệu triều TP.HCM</button>
-            </div>
-
-            <div id="historySensorsPanel" class="history-panel active">
-                <div class="history-chart-container"><canvas id="historyChart"></canvas></div>
-                <div class="history-table-wrap">
-                    <table class="table table-hover align-middle mb-0 wide-history-table">
-                        <thead>
-                            <tr>
-                                <th>Thời gian</th><th>N1 Water</th><th>N2 Water</th><th>Max</th><th>Rate</th><th>Trend</th><th>ETA</th><th>Early</th><th>Alert</th><th>Scenario</th><th>Mưa</th><th>N1</th><th>N2</th>
-                            </tr>
-                        </thead>
-                        <tbody id="sensorHistoryBody">
-                            <tr><td colspan="13" class="text-center text-muted">Chưa tải dữ liệu.</td></tr>
-                        </tbody>
-                    </table>
-                </div>
-            </div>
-
-            <div id="historyEventsPanel" class="history-panel">
-                <div class="history-table-wrap">
-                    <table class="table table-hover align-middle mb-0">
-                        <thead><tr><th>Thời gian</th><th>Thiết bị</th><th>Event</th><th>Mức</th><th>Nội dung</th></tr></thead>
-                        <tbody id="eventHistoryBody"><tr><td colspan="5" class="text-center text-muted">Chưa tải dữ liệu.</td></tr></tbody>
-                    </table>
-                </div>
-            </div>
-
-            <div id="historyDevicesPanel" class="history-panel">
-                <div class="history-table-wrap">
-                    <table class="table table-hover align-middle mb-0">
-                        <thead><tr><th>Thời gian</th><th>Thiết bị</th><th>Trạng thái</th><th>Ghi chú</th></tr></thead>
-                        <tbody id="deviceHistoryBody"><tr><td colspan="4" class="text-center text-muted">Chưa tải dữ liệu.</td></tr></tbody>
-                    </table>
-                </div>
-            </div>
-
-            <div id="historyTidePanel" class="history-panel">
-                <div class="history-table-wrap">
-                    <table class="table table-hover align-middle mb-0">
-                        <thead><tr><th>Ngày dự báo</th><th>Loại</th><th>Mực triều</th><th>Thời gian</th><th>Bản tin nguồn</th></tr></thead>
-                        <tbody id="tideHistoryBody"><tr><td colspan="5" class="text-center text-muted">Chưa tải dữ liệu.</td></tr></tbody>
-                    </table>
-                </div>
-            </div>
-        </section>
-    </main>
-
-    <footer class="dashboard-footer">Flood Monitoring Dashboard • Giám sát mực nước & cảnh báo ngập</footer>
+    <section class="section-block">
+      <div class="section-heading">
+        <div><div class="eyebrow">TRẠNG THÁI DỮ LIỆU</div><h2>Kết nối và thời điểm cập nhật</h2></div>
+      </div>
+      <div class="panel data-status-grid">
+        <div><span>Trạm mưa - ngập đường</span><strong id="station1Time">--</strong></div>
+        <div><span>Trạm triều</span><strong id="station2Time">--</strong></div>
+        <div><span>Trạm trung tâm</span><strong id="centralStatus">--</strong></div>
+        <div><span>Lần lưu gần nhất</span><strong id="lastSave">--</strong></div>
+      </div>
+    </section>
+  </main>
 </div>
-
-<script src="config.js"></script>
-<script src="js/dashboard.js?v=1.8-tide-warning"></script>
-<script src="js/history.js"></script>
-<script src="js/tide.js?v=1.9-high-tide-demo"></script>
+<script src="/config.js"></script>
+<script src="js/dashboard.js"></script>
 </body>
 </html>
