@@ -42,7 +42,10 @@ function createV2Router(){
       const hours=clamp(req.query.hours,1,18,6),limit=Math.round(clamp(req.query.limit,1,10000,5000));
       const from=new Date(Date.now()-hours*3600000);
       const [rows]=await pool.execute(
-        "SELECT id,recorded_at,tide_level_cm,distance_cm,jsn_valid,pump_in,pump_out,scenario,phase FROM "+DB+".tide_node_readings WHERE recorded_at>=? ORDER BY recorded_at ASC,id ASC LIMIT ?",
+        "SELECT * FROM ("+
+        "SELECT id,recorded_at,tide_level_cm,distance_cm,jsn_valid,pump_in,pump_out,scenario,phase FROM "+DB+".tide_node_readings "+
+        "WHERE recorded_at>=? ORDER BY recorded_at DESC,id DESC LIMIT ?"+
+        ") AS recent ORDER BY recorded_at ASC,id ASC",
         [from,limit]
       );
       res.json({hours,count:rows.length,data:rows});
@@ -54,9 +57,12 @@ function createV2Router(){
       const hours=clamp(req.query.hours,1,18,6),limit=Math.round(clamp(req.query.limit,1,10000,5000));
       const from=new Date(Date.now()-hours*3600000);
       const [rows]=await pool.execute(
+        "SELECT * FROM ("+
         "SELECT id,recorded_at,temperature_c,humidity_pct,pressure_hpa,dew_point_c,dew_spread_c,wind_rpm,rain_detected,"+
         "rain_tips_10s,rain_tips_10s AS rain_tips_interval,rain_tips_total,rain_mm_10s,rain_mm_10s AS rain_mm_interval,rain_total_mm,"+
-        "distance_cm,water_level_cm,aht_valid,bmp_valid,jsn_valid FROM "+DB+".rain_node_readings WHERE recorded_at>=? ORDER BY recorded_at ASC,id ASC LIMIT ?",
+        "distance_cm,water_level_cm,aht_valid,bmp_valid,jsn_valid FROM "+DB+".rain_node_readings "+
+        "WHERE recorded_at>=? ORDER BY recorded_at DESC,id DESC LIMIT ?"+
+        ") AS recent ORDER BY recorded_at ASC,id ASC",
         [from,limit]
       );
       res.json({hours,count:rows.length,sample_interval_seconds:SAMPLE_SEC,data:rows});
@@ -71,7 +77,7 @@ function createV2Router(){
         simTimeScale:clamp(req.query.sim_scale,1,3600,undefined)
       });
       res.status(result.available?200:202).json(result);
-    }catch(e){res.status(500).json({available:false,error:e.message});}
+    }catch(e){console.error("[API v2 tide forecast]",e);res.status(500).json({available:false,error:e.message});}
   });
 
   r.get("/rain/forecast",async(req,res)=>{
@@ -81,7 +87,7 @@ function createV2Router(){
         simTimeScale:clamp(req.query.sim_scale,1,3600,undefined)
       });
       res.status(result.available?200:202).json(result);
-    }catch(e){res.status(500).json({available:false,error:e.message});}
+    }catch(e){console.error("[API v2 rain forecast]",e);res.status(500).json({available:false,error:e.message});}
   });
 
   r.get("/flood/forecast",async(req,res)=>{
@@ -91,7 +97,7 @@ function createV2Router(){
         simTimeScale:clamp(req.query.sim_scale,1,3600,undefined)
       });
       res.status(result.available?200:202).json(result);
-    }catch(e){res.status(500).json({available:false,error:e.message});}
+    }catch(e){console.error("[API v2 flood forecast]",e);res.status(500).json({available:false,error:e.message});}
   });
 
   r.post("/node2/fault/reset",async(req,res)=>{
@@ -104,16 +110,26 @@ function createV2Router(){
   });
 
   r.get("/forecast",async(req,res)=>{
-    try{
-      const scale=clamp(req.query.sim_scale,1,3600,undefined);
-      const result=await buildFloodForecast({simTimeScale:scale});
-      res.status(result.available?200:202).json({
-        generated_at:new Date().toISOString(),
-        rain:result.inputs?.rain_forecast||null,
-        tide:result.inputs?.tide_forecast||null,
-        flood:result
-      });
-    }catch(e){res.status(500).json({available:false,error:e.message});}
+    const scale=clamp(req.query.sim_scale,1,3600,undefined);
+    const results=await Promise.allSettled([
+      buildRainForecast({simTimeScale:scale}),
+      buildTideForecast({simTimeScale:scale}),
+      buildFloodForecast({simTimeScale:scale})
+    ]);
+    const pack=(item,name)=>{
+      if(item.status==="fulfilled") return item.value;
+      console.error("[API v2 combined forecast] "+name,item.reason);
+      return {available:false,error:item.reason?.message||String(item.reason||"UNKNOWN_ERROR")};
+    };
+    const rain=pack(results[0],"rain");
+    const tide=pack(results[1],"tide");
+    const flood=pack(results[2],"flood");
+    const anyAvailable=Boolean(rain.available||tide.available||flood.available);
+    res.status(anyAvailable?200:202).json({
+      generated_at:new Date().toISOString(),
+      partial:results.some(x=>x.status==="rejected"),
+      rain,tide,flood
+    });
   });
 
   return r;
