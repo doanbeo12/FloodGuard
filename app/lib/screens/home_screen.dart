@@ -341,7 +341,7 @@ class _HomeScreenState extends State<HomeScreen> {
             Expanded(
               child: valueCard(
                 'Mực nước đường',
-                f(node1['water_level_cm']) + ' cm',
+                n1Fresh ? f(node1['water_level_cm']) + ' cm' : '--',
                 Icons.water,
                 const Color(0xFF1769AA),
               ),
@@ -350,7 +350,7 @@ class _HomeScreenState extends State<HomeScreen> {
             Expanded(
               child: valueCard(
                 'Mực triều',
-                f(node2['tide_level_cm']) + ' cm',
+                n2Fresh ? f(node2['tide_level_cm']) + ' cm' : '--',
                 Icons.waves,
                 const Color(0xFF0F8B8D),
               ),
@@ -360,9 +360,9 @@ class _HomeScreenState extends State<HomeScreen> {
         const SizedBox(height: 22),
         sectionTitle('Mưa và môi trường'),
         const SizedBox(height: 10),
-        environmentGrid(),
+        environmentGrid(n1Fresh),
         const SizedBox(height: 10),
-        rainStateCard(),
+        rainStateCard(n1Fresh),
         const SizedBox(height: 22),
         sectionTitle('Trạng thái dữ liệu'),
         const SizedBox(height: 10),
@@ -541,14 +541,17 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  Widget environmentGrid() {
+  Widget environmentGrid(bool n1Fresh) {
+    String live(dynamic value, String unit, [int digits = 1]) =>
+        n1Fresh ? f(value, digits) + unit : '--';
+
     final items = [
-      ('Nhiệt độ', f(node1['temperature_c']) + ' °C', Icons.thermostat),
-      ('Độ ẩm', f(node1['humidity_pct']) + ' %', Icons.water_drop_outlined),
-      ('Áp suất', f(node1['pressure_hpa']) + ' hPa', Icons.speed),
-      ('Điểm sương', f(node1['dew_spread_c']) + ' °C', Icons.cloud_outlined),
-      ('Cốc gió', f(node1['wind_rpm'], 0) + ' RPM', Icons.air),
-      ('Khoảng cách', f(node1['distance_cm']) + ' cm', Icons.straighten),
+      ('Nhiệt độ', live(node1['temperature_c'], ' °C'), Icons.thermostat),
+      ('Độ ẩm', live(node1['humidity_pct'], ' %'), Icons.water_drop_outlined),
+      ('Áp suất', live(node1['pressure_hpa'], ' hPa'), Icons.speed),
+      ('Điểm sương', live(node1['dew_spread_c'], ' °C'), Icons.cloud_outlined),
+      ('Cốc gió', live(node1['wind_rpm'], ' RPM', 0), Icons.air),
+      ('Khoảng cách', live(node1['distance_cm'], ' cm'), Icons.straighten),
     ];
 
     return GridView.count(
@@ -593,12 +596,13 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  Widget rainStateCard() {
-    final raining =
-        node1['rain_detected'] == 1 || node1['rain_detected'] == true;
-    final tips =
-        node1['rain_tips_interval'] ?? node1['rain_tips_10s'] ?? '--';
-    final total = node1['rain_tips_total'] ?? '--';
+  Widget rainStateCard(bool n1Fresh) {
+    final raining = n1Fresh &&
+        (node1['rain_detected'] == 1 || node1['rain_detected'] == true);
+    final tips = n1Fresh
+        ? (node1['rain_tips_interval'] ?? node1['rain_tips_10s'] ?? '--')
+        : '--';
+    final total = n1Fresh ? (node1['rain_tips_total'] ?? '--') : '--';
 
     return Container(
       padding: const EdgeInsets.all(14),
@@ -606,18 +610,24 @@ class _HomeScreenState extends State<HomeScreen> {
       child: Row(
         children: [
           Icon(
-            raining ? Icons.cloudy_snowing : Icons.wb_sunny_outlined,
-            color: raining
-                ? const Color(0xFF1769AA)
-                : const Color(0xFF159447),
+            !n1Fresh
+                ? Icons.cloud_off_outlined
+                : (raining ? Icons.cloudy_snowing : Icons.wb_sunny_outlined),
+            color: !n1Fresh
+                ? const Color(0xFF6B7280)
+                : (raining
+                    ? const Color(0xFF1769AA)
+                    : const Color(0xFF159447)),
             size: 29,
           ),
           const SizedBox(width: 11),
           Expanded(
             child: Text(
-              raining
-                  ? 'Mưa đã được cảm biến xác nhận'
-                  : 'Cảm biến mưa đang khô',
+              !n1Fresh
+                  ? 'Không có dữ liệu mới'
+                  : (raining
+                      ? 'Mưa đã được cảm biến xác nhận'
+                      : 'Cảm biến mưa đang khô'),
               style: const TextStyle(fontWeight: FontWeight.bold),
             ),
           ),
@@ -642,10 +652,10 @@ class _HomeScreenState extends State<HomeScreen> {
         children: [
           statusRow(
             'Trạm mưa - ngập đường',
-            n1Fresh ? 'Trực tuyến' : 'Quá hạn',
+            n1Fresh ? 'Trực tuyến' : 'Ngoại tuyến',
           ),
           const Divider(),
-          statusRow('Trạm triều', n2Fresh ? 'Trực tuyến' : 'Quá hạn'),
+          statusRow('Trạm triều', n2Fresh ? 'Trực tuyến' : 'Ngoại tuyến'),
           const Divider(),
           statusRow(
             'Trạm trung tâm',
@@ -666,19 +676,23 @@ class _HomeScreenState extends State<HomeScreen> {
                     ),
                     const SizedBox(height: 3),
                     Text(
-                      node2FaultActive ? 'FAULT đang bật' : 'Bình thường',
+                      !n2Fresh
+                          ? '--'
+                          : (node2FaultActive ? 'FAULT đang bật' : 'Bình thường'),
                       style: TextStyle(
                         fontWeight: FontWeight.bold,
-                        color: node2FaultActive
-                            ? const Color(0xFFD73535)
-                            : const Color(0xFF159447),
+                        color: !n2Fresh
+                            ? const Color(0xFF6B7280)
+                            : (node2FaultActive
+                                ? const Color(0xFFD73535)
+                                : const Color(0xFF159447)),
                       ),
                     ),
                   ],
                 ),
               ),
               FilledButton.tonalIcon(
-                onPressed: node2FaultActive && !clearingFault
+                onPressed: n2Fresh && node2FaultActive && !clearingFault
                     ? clearNode2Fault
                     : null,
                 icon: clearingFault
