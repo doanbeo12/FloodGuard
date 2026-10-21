@@ -17,6 +17,7 @@ class _HomeScreenState extends State<HomeScreen> {
   Map<String, dynamic> forecast = {};
   bool loading = true;
   bool refreshing = false;
+  bool clearingFault = false;
   String? error;
   int tab = 0;
   Timer? timer;
@@ -62,9 +63,36 @@ class _HomeScreenState extends State<HomeScreen> {
   Map<String, dynamic> get node1 => m(latest['node1']);
   Map<String, dynamic> get node2 => m(latest['node2']);
   Map<String, dynamic> get collector => m(latest['collector']);
+  Map<String, dynamic> get node2Live => m(collector['node2Live']);
   Map<String, dynamic> get rain => m(forecast['rain']);
   Map<String, dynamic> get tide => m(forecast['tide']);
   Map<String, dynamic> get flood => m(forecast['flood']);
+
+  bool get node2FaultActive {
+    final value = node2Live['fault'];
+    return value == true || value == 1 || value?.toString() == '1' || value?.toString().toLowerCase() == 'true';
+  }
+
+  Future<void> clearNode2Fault() async {
+    if (clearingFault) return;
+    setState(() => clearingFault = true);
+    try {
+      await ApiService.clearNode2Fault();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Đã gửi lệnh xóa FAULT đến trạm triều.')),
+      );
+      await Future.delayed(const Duration(seconds: 2));
+      await loadData();
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Không gửi được lệnh: ' + e.toString())),
+      );
+    } finally {
+      if (mounted) setState(() => clearingFault = false);
+    }
+  }
 
   Future<void> loadData() async {
     if (refreshing) return;
@@ -590,6 +618,45 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
           const Divider(),
           statusRow('Lần lưu gần nhất', time(collector['lastSaveAt'])),
+          const Divider(),
+          Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Trạng thái bảo vệ trạm triều',
+                      style: TextStyle(color: Color(0xFF6B7280)),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      node2FaultActive ? 'FAULT đang bật' : 'Bình thường',
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        color: node2FaultActive
+                            ? const Color(0xFFD73535)
+                            : const Color(0xFF159447),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              FilledButton.tonalIcon(
+                onPressed: node2FaultActive && !clearingFault
+                    ? clearNode2Fault
+                    : null,
+                icon: clearingFault
+                    ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.restart_alt),
+                label: const Text('Xóa FAULT'),
+              ),
+            ],
+          ),
         ],
       ),
     );
