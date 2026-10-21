@@ -53,11 +53,31 @@ class _HomeScreenState extends State<HomeScreen> {
     return two(dt.hour) + ':' + two(dt.minute) + ':' + two(dt.second);
   }
 
-  bool fresh(dynamic v) {
+  bool freshWithin(dynamic v, int seconds) {
     if (v == null) return false;
     final dt = DateTime.tryParse(v.toString())?.toUtc();
     if (dt == null) return false;
-    return DateTime.now().toUtc().difference(dt).inSeconds.abs() <= 30;
+    return DateTime.now().toUtc().difference(dt).inSeconds.abs() <= seconds;
+  }
+
+  bool fresh(dynamic v) => freshWithin(v, 30);
+
+  bool centralOnline(bool n1Fresh, bool n2Fresh) {
+    if (n1Fresh || n2Fresh) return true;
+
+    final status = (collector['centralStatus']?.toString() ?? '')
+        .trim()
+        .toLowerCase();
+    final heartbeatFresh = freshWithin(
+      collector['lastCentralStatusAt'],
+      45,
+    );
+
+    return heartbeatFresh &&
+        (status == 'online' ||
+            status == 'connected' ||
+            status == '1' ||
+            status == 'true');
   }
 
   Map<String, dynamic> get node1 => m(latest['node1']);
@@ -301,6 +321,7 @@ class _HomeScreenState extends State<HomeScreen> {
     final n2Fresh = fresh(
       collector['node2LastReceivedAt'] ?? node2['recorded_at'],
     );
+    final centralFresh = centralOnline(n1Fresh, n2Fresh);
     final alert = flood['overall_alert_level']?.toString() ?? 'NORMAL';
 
     return ListView(
@@ -345,7 +366,7 @@ class _HomeScreenState extends State<HomeScreen> {
         const SizedBox(height: 22),
         sectionTitle('Trạng thái dữ liệu'),
         const SizedBox(height: 10),
-        statusCard(n1Fresh, n2Fresh),
+        statusCard(n1Fresh, n2Fresh, centralFresh),
       ],
     );
   }
@@ -613,7 +634,7 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  Widget statusCard(bool n1Fresh, bool n2Fresh) {
+  Widget statusCard(bool n1Fresh, bool n2Fresh, bool centralFresh) {
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: decoration(),
@@ -628,9 +649,7 @@ class _HomeScreenState extends State<HomeScreen> {
           const Divider(),
           statusRow(
             'Trạm trung tâm',
-            n1Fresh || n2Fresh
-                ? 'Trực tuyến'
-                : (collector['centralStatus']?.toString() ?? '--'),
+            centralFresh ? 'Trực tuyến' : 'Ngoại tuyến',
           ),
           const Divider(),
           statusRow('Lần lưu gần nhất', time(collector['lastSaveAt'])),
