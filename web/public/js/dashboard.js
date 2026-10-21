@@ -150,13 +150,23 @@ function renderHistory(rain,tide){
   c.update();
 }
 async function refreshMain(){
+  let latestOk=false;
   try{
-    const [latest,forecast]=await Promise.all([getJson("/api/v2/latest"),getJson("/api/v2/forecast?sim_scale=60")]);
+    const latest=await getJson("/api/v2/latest");
+    renderLatest(latest);
+    latestOk=true;
     setBadge(el("apiBadge"),"Máy chủ: hoạt động","NORMAL");
-    renderLatest(latest); renderForecast(forecast);
   }catch(e){
-    console.error(e);
-    setBadge(el("apiBadge"),"Máy chủ: chưa có API mới","DANGER");
+    console.error("latest",e);
+    setBadge(el("apiBadge"),"Máy chủ: lỗi dữ liệu hiện tại","DANGER");
+  }
+
+  try{
+    const forecast=await getJson("/api/v2/forecast?sim_scale=60");
+    renderForecast(forecast);
+  }catch(e){
+    console.error("forecast",e);
+    if(latestOk) setBadge(el("apiBadge"),"Máy chủ: hoạt động • dự báo lỗi","WARNING");
   }
 }
 async function refreshHistory(){
