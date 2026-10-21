@@ -97,27 +97,41 @@ class _HomeScreenState extends State<HomeScreen> {
   Future<void> loadData() async {
     if (refreshing) return;
     refreshing = true;
+
+    Map<String, dynamic>? latestResult;
+    Map<String, dynamic>? forecastResult;
+    Object? latestError;
+
     try {
-      final result = await Future.wait([
-        ApiService.getLatest(),
-        ApiService.getForecast(),
-      ]);
-      if (!mounted) return;
-      setState(() {
-        latest = result[0];
-        forecast = result[1];
-        loading = false;
-        error = null;
-      });
+      latestResult = await ApiService.getLatest();
     } catch (e) {
-      if (!mounted) return;
-      setState(() {
-        loading = false;
-        error = e.toString();
-      });
-    } finally {
-      refreshing = false;
+      latestError = e;
     }
+
+    try {
+      forecastResult = await ApiService.getForecast();
+    } catch (_) {
+      // Dữ liệu hiện tại vẫn được cập nhật khi phần dự báo tạm lỗi.
+    }
+
+    if (!mounted) {
+      refreshing = false;
+      return;
+    }
+
+    setState(() {
+      if (latestResult != null) latest = latestResult;
+      if (forecastResult != null) forecast = forecastResult;
+      loading = false;
+
+      if (latestResult != null || latest.isNotEmpty) {
+        error = null;
+      } else {
+        error = latestError?.toString() ?? 'Không lấy được dữ liệu hiện tại';
+      }
+    });
+
+    refreshing = false;
   }
 
   String alertText(String code) {
@@ -614,7 +628,9 @@ class _HomeScreenState extends State<HomeScreen> {
           const Divider(),
           statusRow(
             'Trạm trung tâm',
-            collector['centralStatus']?.toString() ?? '--',
+            n1Fresh || n2Fresh
+                ? 'Trực tuyến'
+                : (collector['centralStatus']?.toString() ?? '--'),
           ),
           const Divider(),
           statusRow('Lần lưu gần nhất', time(collector['lastSaveAt'])),
