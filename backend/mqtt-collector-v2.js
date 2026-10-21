@@ -15,13 +15,15 @@ const URL = process.env.MQTT_V2_URL || process.env.MQTT_URL || "mqtt://broker.hi
 const T1 = process.env.MQTT_V2_TOPIC_NODE1 || "floodguard/v2/node1/realtime";
 const T2 = process.env.MQTT_V2_TOPIC_NODE2 || "floodguard/v2/node2/realtime";
 const TS = process.env.MQTT_V2_TOPIC_STATUS || "floodguard/v2/central/status";
+const TC = process.env.MQTT_V2_TOPIC_COMMAND || "floodguard/v2/central/command";
 const SAVE_MS = Math.max(1000, Number(process.env.DB_V2_SAMPLE_INTERVAL_MS || 5000));
 const FRESH_MS = Math.max(SAVE_MS * 2, Number(process.env.MQTT_V2_FRESHNESS_MS || 30000));
 const MM_PER_TIP = Number(process.env.RAIN_MM_PER_TIP || 0);
 
 const state = {
   n1: null, n2: null, last1: null, last2: null, lastTips: null,
-  central: "unknown", centralAt: null, lastSave: null, busy: false, timer: null
+  central: "unknown", centralAt: null, lastSave: null, busy: false, timer: null,
+  client: null, lastCommandAt: null, lastCommand: null
 };
 
 async function saveNode1(s, at) {
@@ -102,6 +104,8 @@ function startMqttCollectorV2() {
     clean: true, reconnectPeriod: 5000, connectTimeout: 15000
   });
 
+  state.client = client;
+
   client.on("connect", () => {
     console.log("[MQTT v2] Connected: " + URL);
     client.subscribe([T1, T2, TS], { qos: 0 }, e => {
@@ -131,6 +135,33 @@ function startMqttCollectorV2() {
   return client;
 }
 
+function publishNode2Command(command) {
+  return new Promise((resolve, reject) => {
+    const client = state.client;
+    if (!client || !client.connected) {
+      reject(new Error("MQTT v2 chưa kết nối"));
+      return;
+    }
+
+    const payload = JSON.stringify({
+      target: "NODE2",
+      command,
+      issuedAt: new Date().toISOString()
+    });
+
+    client.publish(TC, payload, { qos: 0, retain: false }, err => {
+      if (err) {
+        reject(err);
+        return;
+      }
+      state.lastCommandAt = new Date();
+      state.lastCommand = command;
+      console.log("[MQTT v2 CMD] " + command + " -> " + TC);
+      resolve({ topic: TC, payload: JSON.parse(payload) });
+    });
+  });
+}
+
 function getCollectorV2State() {
   return {
     database: DB,
@@ -139,8 +170,12 @@ function getCollectorV2State() {
     lastCentralStatusAt: state.centralAt,
     node1LastReceivedAt: state.n1 ? state.n1.receivedAt : null,
     node2LastReceivedAt: state.n2 ? state.n2.receivedAt : null,
-    lastSaveAt: state.lastSave
+    lastSaveAt: state.lastSave,
+    node1Live: state.n1 ? state.n1.data : null,
+    node2Live: state.n2 ? state.n2.data : null,
+    lastCommandAt: state.lastCommandAt,
+    lastCommand: state.lastCommand
   };
 }
 
-module.exports = { startMqttCollectorV2, getCollectorV2State };
+module.exports = { startMqttCollectorV2, getCollectorV2State, publishNode2Command };
