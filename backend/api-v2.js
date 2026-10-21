@@ -3,7 +3,7 @@ const { pool } = require("./db");
 const { buildTideForecast } = require("./tide-predictor-v2");
 const { buildRainForecast } = require("./rain-predictor-v2");
 const { buildFloodForecast } = require("./flood-predictor-v2");
-const { getCollectorV2State } = require("./mqtt-collector-v2");
+const { getCollectorV2State, publishNode2Command } = require("./mqtt-collector-v2");
 require("dotenv").config();
 
 function safeDb(name){return /^[A-Za-z0-9_]+$/.test(String(name||""))?String(name):"floodguard_v2";}
@@ -92,6 +92,15 @@ function createV2Router(){
       });
       res.status(result.available?200:202).json(result);
     }catch(e){res.status(500).json({available:false,error:e.message});}
+  });
+
+  r.post("/node2/fault/reset",async(req,res)=>{
+    try{
+      const result=await publishNode2Command("CLEAR_FAULT");
+      res.json({ok:true,message:"Da gui lenh xoa FAULT den tram trung tam.",command:result});
+    }catch(e){
+      res.status(503).json({ok:false,error:e.message});
+    }
   });
 
   r.get("/forecast",async(req,res)=>{
