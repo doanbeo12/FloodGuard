@@ -26,6 +26,7 @@ const badgeClass = code => {
   return "muted";
 };
 function setBadge(node, text, code){
+  if(!node) return;
   node.textContent=text; node.className="status-pill "+badgeClass(code);
 }
 async function getJson(path){
@@ -49,30 +50,51 @@ function ensureChart(){
 }
 function renderLatest(d){
   const n1=d.node1||{},n2=d.node2||{},c=d.collector||{};
+  const t1=c.node1LastReceivedAt || n1.mqtt_received_at || n1.recorded_at;
+  const t2=c.node2LastReceivedAt || n2.mqtt_received_at || n2.recorded_at;
+  const node1Fresh=ageSec(t1)<=30;
+  const node2Fresh=ageSec(t2)<=30;
+  const centralReported=String(c.centralStatus||"").trim().toLowerCase();
+  const centralHeartbeatFresh=ageSec(c.lastCentralStatusAt)<=45 && ["online","connected","1","true"].includes(centralReported);
+  const centralFresh=centralHeartbeatFresh || node1Fresh || node2Fresh;
+
   el("roadLevel").textContent=fmt(n1.water_level_cm);
-  el("roadUpdated").textContent=timeText(n1.recorded_at);
+  el("roadUpdated").textContent=timeText(t1);
   el("tideLevel").textContent=fmt(n2.tide_level_cm);
-  el("tideUpdated").textContent=timeText(n2.recorded_at);
-  el("rainState").textContent=Number(n1.rain_detected)===1?"ĐANG MƯA":"KHÔ";
-  el("rainState").style.color=Number(n1.rain_detected)===1?"#1769aa":"#159447";
-  el("tipsInterval").textContent="Gàu lật / mẫu: "+(n1.rain_tips_interval ?? n1.rain_tips_10s ?? "--");
-  el("tipsTotal").textContent="Tổng: "+(n1.rain_tips_total ?? "--");
+  el("tideUpdated").textContent=timeText(t2);
+
+  const road=num(n1.water_level_cm);
+  const tide=num(n2.tide_level_cm);
+  if(el("roadMarker")) el("roadMarker").style.left=Math.max(0,Math.min(100,(road||0)/16*100))+"%";
+  if(el("tideMarker")) el("tideMarker").style.left=Math.max(0,Math.min(100,(tide||0)/16*100))+"%";
+
+  const raining=Number(n1.rain_detected)===1;
+  el("rainState").textContent=raining?"ĐANG MƯA":"KHÔ";
+  el("rainState").style.color=raining?"#1769aa":"#159447";
+  setBadge(el("rainStateBadge"),raining?"MƯA":"KHÔ",raining?"RAIN_ACTIVE":"NORMAL");
+  el("tipsInterval").textContent=(n1.rain_tips_interval ?? n1.rain_tips_10s ?? "--");
+  el("tipsTotal").textContent=(n1.rain_tips_total ?? "--");
 
   el("temperature").textContent=fmt(n1.temperature_c)+" °C";
   el("humidity").textContent=fmt(n1.humidity_pct)+" %";
   el("pressure").textContent=fmt(n1.pressure_hpa)+" hPa";
   el("dewSpread").textContent=fmt(n1.dew_spread_c)+" °C";
   el("windRpm").textContent=fmt(n1.wind_rpm,0)+" RPM";
-  el("rainSensor").textContent=Number(n1.rain_detected)===1?"ƯỚT":"KHÔ";
+  el("rainSensor").textContent=raining?"ƯỚT":"KHÔ";
 
-  const t1=c.node1LastReceivedAt || n1.mqtt_received_at || n1.recorded_at;
-  const t2=c.node2LastReceivedAt || n2.mqtt_received_at || n2.recorded_at;
-  setBadge(el("station1Badge"),"Trạm mưa: "+(ageSec(t1)<=30?"trực tuyến":"quá hạn"),ageSec(t1)<=30?"NORMAL":"WARNING");
-  setBadge(el("station2Badge"),"Trạm triều: "+(ageSec(t2)<=30?"trực tuyến":"quá hạn"),ageSec(t2)<=30?"NORMAL":"WARNING");
+  setBadge(el("station1Badge"),"Trạm mưa: "+(node1Fresh?"trực tuyến":"quá hạn"),node1Fresh?"NORMAL":"WARNING");
+  setBadge(el("station2Badge"),"Trạm triều: "+(node2Fresh?"trực tuyến":"quá hạn"),node2Fresh?"NORMAL":"WARNING");
+  setBadge(el("centralBadge"),"Trạm trung tâm: "+(centralFresh?"trực tuyến":"quá hạn"),centralFresh?"NORMAL":"WARNING");
+
   el("station1Time").textContent=timeText(t1);
   el("station2Time").textContent=timeText(t2);
-  el("centralStatus").textContent=c.centralStatus || "--";
+  el("centralStatus").textContent=centralFresh?"TRỰC TUYẾN":"QUÁ HẠN";
   el("lastSave").textContent=timeText(c.lastSaveAt);
+
+  if(el("station1StatusTable")) el("station1StatusTable").textContent=(node1Fresh?"Trực tuyến • ":"Quá hạn • ")+timeText(t1);
+  if(el("station2StatusTable")) el("station2StatusTable").textContent=(node2Fresh?"Trực tuyến • ":"Quá hạn • ")+timeText(t2);
+  if(el("centralStatusTable")) el("centralStatusTable").textContent=centralFresh?"Trực tuyến":"Quá hạn / chưa có heartbeat mới";
+  if(el("serverStatusTable")) el("serverStatusTable").textContent="API hoạt động • lưu gần nhất "+timeText(c.lastSaveAt);
 }
 function trendText(v,unit){
   const n=num(v); if(n===null) return "Xu hướng: --";
@@ -119,7 +141,8 @@ function renderForecast(d){
     el("roadTrend").textContent=(label[cur.road_trend]||cur.road_trend||"--")+" • "+fmt(cur.road_slope_cm_per_real_min,3)+" cm/phút";
     el("floodForecastRows").innerHTML=(flood.forecast||[]).map(x=>'<div class="forecast-row"><span>+'+x.horizon_sim_hours+' giờ</span><strong>'+fmt(x.road_level_cm)+' cm</strong><em>'+(label[x.alert_level]||x.alert_level)+'</em></div>').join("");
     const cause=flood.predicted_cause?.label || "--";
-    const wc=el("warningCard"); wc.className="panel warning-card "+(lvl==="WATCH"?"watch":lvl==="WARNING"?"warning":lvl==="DANGER"?"danger":"normal");
+    const wc=el("warningCard"); wc.className="dashboard-card warning-card "+(lvl==="WATCH"?"watch":lvl==="WARNING"?"warning":lvl==="DANGER"?"danger":"normal");
+    setBadge(el("floodTopBadge"),label[lvl]||lvl,lvl);
     el("warningLevel").textContent=label[lvl]||lvl;
     el("warningCause").textContent="Nguyên nhân: "+cause;
     el("warningConfidence").textContent="Tin cậy: "+(label[flood.confidence_label]||flood.confidence_label||"--")+" ("+fmt((num(flood.confidence)||0)*100,0)+"%)";
@@ -135,6 +158,7 @@ function renderForecast(d){
     }
   }else{
     el("floodNoData").classList.remove("d-none"); setBadge(el("floodBadge"),"CHƯA ĐỦ DỮ LIỆU","UNKNOWN");
+    setBadge(el("floodTopBadge"),"CHỜ DỮ LIỆU","UNKNOWN");
     el("warningLevel").textContent="CHỜ DỮ LIỆU"; el("warningMessage").textContent=flood.message || "Chưa đủ dữ liệu để dự báo ngập.";
   }
 }
@@ -159,24 +183,35 @@ async function refreshMain(){
   }catch(e){
     console.error("latest",e);
     setBadge(el("apiBadge"),"Máy chủ: lỗi dữ liệu hiện tại","DANGER");
+    if(el("serverStatusTable")) el("serverStatusTable").textContent="Không lấy được dữ liệu hiện tại";
   }
 
-  try{
-    const forecast=await getJson("/api/v2/forecast?sim_scale=60");
-    renderForecast(forecast);
-  }catch(e){
-    console.error("forecast",e);
-    if(latestOk) setBadge(el("apiBadge"),"Máy chủ: hoạt động • dự báo lỗi","WARNING");
+  const results=await Promise.allSettled([
+    getJson("/api/v2/rain/forecast?sim_scale=60"),
+    getJson("/api/v2/tide/forecast?sim_scale=60"),
+    getJson("/api/v2/flood/forecast?sim_scale=60")
+  ]);
+  const rain=results[0].status==="fulfilled"?results[0].value:{available:false,message:"Dự báo mưa đang tạm lỗi hoặc chưa đủ dữ liệu."};
+  const tide=results[1].status==="fulfilled"?results[1].value:{available:false,message:"Dự báo triều đang tạm lỗi hoặc chưa đủ dữ liệu."};
+  const flood=results[2].status==="fulfilled"?results[2].value:{available:false,message:"Dự báo ngập đang tạm lỗi hoặc chưa đủ dữ liệu."};
+  renderForecast({rain,tide,flood});
+
+  if(latestOk && results.some(x=>x.status==="rejected")){
+    setBadge(el("apiBadge"),"Máy chủ: hoạt động • một phần dự báo lỗi","WARNING");
   }
 }
 async function refreshHistory(){
   try{
-    const [rain,tide]=await Promise.all([getJson("/api/v2/rain/history?hours=1&limit=500"),getJson("/api/v2/tide/history?hours=1&limit=500")]);
+    const [rain,tide]=await Promise.all([getJson("/api/v2/rain/history?hours=1&limit=1000"),getJson("/api/v2/tide/history?hours=1&limit=1000")]);
     renderHistory(rain,tide);
   }catch(e){console.error("history",e);}
 }
 function tick(){el("clock").textContent=new Date().toLocaleTimeString("vi-VN",{hour12:false});}
 el("refreshBtn").addEventListener("click",()=>{refreshMain();refreshHistory();});
+document.querySelectorAll(".dashboard-nav-link").forEach(a=>a.addEventListener("click",()=>{
+  document.querySelectorAll(".dashboard-nav-link").forEach(x=>x.classList.remove("active"));
+  a.classList.add("active");
+}));
 tick();setInterval(tick,1000);
 refreshMain();refreshHistory();
 setInterval(refreshMain,5000);
