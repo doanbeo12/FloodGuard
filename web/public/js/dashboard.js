@@ -70,6 +70,25 @@ async function getJson(path){
   if(!r.ok && r.status!==202) throw new Error(data.error || ("HTTP "+r.status));
   return data;
 }
+async function postJson(path,body){
+  const r=await fetch(API_BASE+path,{
+    method:"POST",
+    headers:{"Content-Type":"application/json"},
+    body:JSON.stringify(body||{}),
+    cache:"no-store"
+  });
+  let data={}; try{data=await r.json();}catch(_){}
+  if(!r.ok) throw new Error(data.error || ("HTTP "+r.status));
+  return data;
+}
+let rainDemoEnabled=false;
+function renderRainDemo(state){
+  rainDemoEnabled=Boolean(state?.enabled);
+  const btn=el("rainDemoBtn");
+  if(!btn) return;
+  btn.className="btn w-100 "+(rainDemoEnabled?"btn-warning":"btn-outline-primary");
+  btn.innerHTML='<i class="fa-solid fa-cloud-rain"></i> Điều kiện có lợi cho mưa: '+(rainDemoEnabled?"BẬT":"TẮT");
+}
 let chart=null;
 function ensureChart(){
   if(chart) return chart;
@@ -215,6 +234,7 @@ async function refreshMain(){
   try{
     const latest=await getJson("/api/v2/latest");
     renderLatest(latest);
+    renderRainDemo(latest.demo?.rain_favorable);
     latestOk=true;
     setBadge(el("apiBadge"),"Máy chủ: hoạt động","NORMAL");
   }catch(e){
@@ -245,6 +265,19 @@ async function refreshHistory(){
 }
 function tick(){el("clock").textContent=new Date().toLocaleTimeString("vi-VN",{hour12:false});}
 el("refreshBtn").addEventListener("click",()=>{refreshMain();refreshHistory();});
+if(el("rainDemoBtn")) el("rainDemoBtn").addEventListener("click",async()=>{
+  const btn=el("rainDemoBtn");
+  btn.disabled=true;
+  try{
+    const result=await postJson("/api/v2/demo/rain-favorable",{enabled:!rainDemoEnabled});
+    renderRainDemo(result.rain_favorable);
+    await refreshMain();
+  }catch(e){
+    console.error("rain demo",e);
+  }finally{
+    btn.disabled=false;
+  }
+});
 document.querySelectorAll(".dashboard-nav-link").forEach(a=>a.addEventListener("click",()=>{
   document.querySelectorAll(".dashboard-nav-link").forEach(x=>x.classList.remove("active"));
   a.classList.add("active");
