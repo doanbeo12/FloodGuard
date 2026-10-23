@@ -39,6 +39,10 @@ async function ensurePostgresSchema() {
       rain_tips_total BIGINT NOT NULL DEFAULT 0,
       rain_mm_10s DOUBLE PRECISION,
       rain_total_mm DOUBLE PRECISION,
+      rain_ml_interval DOUBLE PRECISION,
+      rain_flow_ml_s DOUBLE PRECISION,
+      rain_ml_total DOUBLE PRECISION,
+      rain_interval_seconds DOUBLE PRECISION,
       distance_cm DOUBLE PRECISION,
       water_level_cm DOUBLE PRECISION,
       aht_valid SMALLINT NOT NULL DEFAULT 0,
@@ -52,6 +56,12 @@ async function ensurePostgresSchema() {
       ON "${schema}".rain_node_readings(recorded_at);
     CREATE INDEX IF NOT EXISTS idx_rain_seq
       ON "${schema}".rain_node_readings(seq);
+
+    ALTER TABLE "${schema}".rain_node_readings
+      ADD COLUMN IF NOT EXISTS rain_ml_interval DOUBLE PRECISION,
+      ADD COLUMN IF NOT EXISTS rain_flow_ml_s DOUBLE PRECISION,
+      ADD COLUMN IF NOT EXISTS rain_ml_total DOUBLE PRECISION,
+      ADD COLUMN IF NOT EXISTS rain_interval_seconds DOUBLE PRECISION;
 
     CREATE TABLE IF NOT EXISTS "${schema}".tide_node_readings (
       id BIGSERIAL PRIMARY KEY,
