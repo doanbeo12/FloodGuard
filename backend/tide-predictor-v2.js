@@ -1,4 +1,4 @@
-const { pool } = require("./db");
+const { pool } = require("./db-v2");
 require("dotenv").config();
 
 function safeDb(name) {
