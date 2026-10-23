@@ -1,5 +1,5 @@
 const express = require("express");
-const { pool } = require("./db");
+const { pool } = require("./db-v2");
 const { buildTideForecast } = require("./tide-predictor-v2");
 const { buildRainForecast } = require("./rain-predictor-v2");
 const { buildFloodForecast } = require("./flood-predictor-v2");
@@ -16,8 +16,8 @@ function createV2Router(){
 
   r.get("/health",async(req,res)=>{
     try{
-      const [rows]=await pool.query("SELECT DATABASE() AS connection_database,NOW(3) AS db_time");
-      res.json({ok:true,api:"FloodGuard v2",features:["5s-storage","sensor-only-tide-forecast","sensor-trend-rain-forecast","flood-early-warning"],v2_database:DB,mysql_connection_database:rows[0]?.connection_database||null,collector:getCollectorV2State(),time:new Date().toISOString()});
+      const [rows]=await pool.query("SELECT CURRENT_TIMESTAMP AS db_time");
+      res.json({ok:true,api:"FloodGuard v2",features:["5s-storage","sensor-only-tide-forecast","sensor-trend-rain-forecast","flood-early-warning"],v2_database:DB,database_connection:process.env.DATABASE_URL?"postgres":(process.env.MYSQL_URL?"mysql":null),collector:getCollectorV2State(),time:new Date().toISOString()});
     }catch(e){res.status(503).json({ok:false,error:e.message});}
   });
 
