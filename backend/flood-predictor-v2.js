@@ -29,9 +29,9 @@ function regression(rows) {
   const xs = pts.map(p => (p.t - t0) / 60000);
   const ys = pts.map(p => p.v);
   const mx = mean(xs), my = mean(ys);
-  let num = 0, den = 0;
-  for (let i = 0; i < xs.length; i++) { num += (xs[i] - mx) * (ys[i] - my); den += (xs[i] - mx) * (xs[i] - mx); }
-  return den > 0 ? num / den : 0;
+  let numerator = 0, denominator = 0;
+  for (let i = 0; i < xs.length; i++) { numerator += (xs[i] - mx) * (ys[i] - my); denominator += (xs[i] - mx) * (xs[i] - mx); }
+  return denominator > 0 ? numerator / denominator : 0;
 }
 
 async function loadRoadHistory(minutes = ROAD_WINDOW_MIN) {
