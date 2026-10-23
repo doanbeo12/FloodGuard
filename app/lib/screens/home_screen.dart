@@ -275,7 +275,7 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  Widget header(String title, String subtitle) {
+  Widget header(String title) {
     return Row(
       children: [
         Container(
@@ -289,24 +289,12 @@ class _HomeScreenState extends State<HomeScreen> {
         ),
         const SizedBox(width: 13),
         Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                title,
-                style: const TextStyle(
-                  fontSize: 22,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-              Text(
-                subtitle,
-                style: const TextStyle(
-                  color: Color(0xFF6B7280),
-                  fontSize: 12,
-                ),
-              ),
-            ],
+          child: Text(
+            title,
+            style: const TextStyle(
+              fontSize: 22,
+              fontWeight: FontWeight.bold,
+            ),
           ),
         ),
         IconButton(onPressed: loadData, icon: const Icon(Icons.refresh)),
@@ -328,7 +316,7 @@ class _HomeScreenState extends State<HomeScreen> {
       physics: const AlwaysScrollableScrollPhysics(),
       padding: const EdgeInsets.fromLTRB(18, 18, 18, 30),
       children: [
-        header('FloodGuard', 'Giám sát và cảnh báo ngập trên mô hình'),
+        header('FloodGuard'),
         const SizedBox(height: 18),
         systemCard(n1Fresh, n2Fresh),
         const SizedBox(height: 13),
@@ -391,32 +379,14 @@ class _HomeScreenState extends State<HomeScreen> {
             size: 34,
           ),
           const SizedBox(width: 14),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  online
-                      ? 'Hệ thống đang nhận dữ liệu'
-                      : 'Chưa nhận được dữ liệu mới',
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 17,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  'Trạm mưa: ' +
-                      (n1Fresh ? 'trực tuyến' : 'quá hạn') +
-                      ' • Trạm triều: ' +
-                      (n2Fresh ? 'trực tuyến' : 'quá hạn'),
-                  style: TextStyle(
-                    color: Colors.white.withOpacity(0.88),
-                    fontSize: 12,
-                  ),
-                ),
-              ],
+          const Expanded(
+            child: Text(
+              'TRẠNG THÁI HỆ THỐNG',
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 17,
+                fontWeight: FontWeight.bold,
+              ),
             ),
           ),
         ],
@@ -623,11 +593,7 @@ class _HomeScreenState extends State<HomeScreen> {
           const SizedBox(width: 11),
           Expanded(
             child: Text(
-              !n1Fresh
-                  ? 'Không có dữ liệu mới'
-                  : (raining
-                      ? 'Mưa đã được cảm biến xác nhận'
-                      : 'Cảm biến mưa đang khô'),
+              !n1Fresh ? 'Mất kết nối' : (raining ? 'ĐANG MƯA' : 'KHÔ'),
               style: const TextStyle(fontWeight: FontWeight.bold),
             ),
           ),
@@ -652,14 +618,14 @@ class _HomeScreenState extends State<HomeScreen> {
         children: [
           statusRow(
             'Trạm mưa - ngập đường',
-            n1Fresh ? 'Trực tuyến' : 'Ngoại tuyến',
+            n1Fresh ? 'Trực tuyến' : 'Mất kết nối',
           ),
           const Divider(),
-          statusRow('Trạm triều', n2Fresh ? 'Trực tuyến' : 'Ngoại tuyến'),
+          statusRow('Trạm triều', n2Fresh ? 'Trực tuyến' : 'Mất kết nối'),
           const Divider(),
           statusRow(
             'Trạm trung tâm',
-            centralFresh ? 'Trực tuyến' : 'Ngoại tuyến',
+            centralFresh ? 'Trực tuyến' : 'Mất kết nối',
           ),
           const Divider(),
           statusRow('Lần lưu gần nhất', time(collector['lastSaveAt'])),
@@ -730,34 +696,14 @@ class _HomeScreenState extends State<HomeScreen> {
       physics: const AlwaysScrollableScrollPhysics(),
       padding: const EdgeInsets.fromLTRB(18, 18, 18, 30),
       children: [
-        header(
-          'Dự báo',
-          'Mưa, triều và nguy cơ ngập trong 1–3 giờ mô phỏng',
-        ),
+        header('Dự báo'),
         const SizedBox(height: 18),
         rainCard(),
         const SizedBox(height: 13),
         tideCard(),
         const SizedBox(height: 13),
         floodCard(),
-        const SizedBox(height: 14),
-        Container(
-          padding: const EdgeInsets.all(14),
-          decoration: BoxDecoration(
-            color: const Color(0xFFFFF7ED),
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: const Color(0xFFFED7AA)),
-          ),
-          child: const Text(
-            'Các giá trị dự báo phục vụ mô hình thực nghiệm. '
-            'Với hệ số thời gian 60, một giờ mô phỏng tương ứng khoảng một phút thực.',
-            style: TextStyle(
-              fontSize: 12,
-              color: Color(0xFF6B4F2A),
-              height: 1.4,
-            ),
-          ),
-        ),
+
       ],
     );
   }
