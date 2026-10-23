@@ -821,7 +821,7 @@ class _HomeScreenState extends State<HomeScreen> {
           ...rows.map((raw) {
             final row = m(raw);
             return forecastRow(
-              '+' + (row['horizon_sim_hours']?.toString() ?? '--') + ' giờ',
+              (row['horizon_sim_hours']?.toString() ?? '--') + ' giờ',
               f(row['level_cm']) + ' cm',
               row['method'] == 'SEASONAL_HISTORY'
                   ? 'Theo chu kỳ'
@@ -857,7 +857,7 @@ class _HomeScreenState extends State<HomeScreen> {
           ...rows.map((raw) {
             final row = m(raw);
             return forecastRow(
-              '+' + (row['horizon_sim_hours']?.toString() ?? '--') + ' giờ',
+              (row['horizon_sim_hours']?.toString() ?? '--') + ' giờ',
               f(row['road_level_cm']) + ' cm',
               alertText(row['alert_level']?.toString() ?? ''),
             );
