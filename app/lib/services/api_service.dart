@@ -33,6 +33,20 @@ class ApiService {
     return _decodeResponse(response);
   }
 
+  static Future<Map<String, dynamic>> _post(
+    String path,
+    Map<String, dynamic> body,
+  ) async {
+    final response = await http
+        .post(
+          Uri.parse(baseUrl + path),
+          headers: {'Content-Type': 'application/json'},
+          body: jsonEncode(body),
+        )
+        .timeout(const Duration(seconds: 15));
+    return _decodeResponse(response);
+  }
+
   static Future<Map<String, dynamic>> getHealth() =>
       _get('/api/v2/health');
 
@@ -48,14 +62,9 @@ class ApiService {
   static Future<Map<String, dynamic>> getTideHistory({int hours = 1}) =>
       _get('/api/v2/tide/history?hours=' + hours.toString() + '&limit=500');
 
-  static Future<Map<String, dynamic>> clearNode2Fault() async {
-    final response = await http
-        .post(
-          Uri.parse(baseUrl + '/api/v2/node2/fault/reset'),
-          headers: {'Content-Type': 'application/json'},
-          body: '{}',
-        )
-        .timeout(const Duration(seconds: 15));
-    return _decodeResponse(response);
-  }
+  static Future<Map<String, dynamic>> clearNode2Fault() =>
+      _post('/api/v2/node2/fault/reset', {});
+
+  static Future<Map<String, dynamic>> setRainFavorableDemo(bool enabled) =>
+      _post('/api/v2/demo/rain-favorable', {'enabled': enabled});
 }
