@@ -31,7 +31,12 @@ function createV2Router(){
       if(node1){
         node1.rain_tips_interval=node1.rain_tips_10s;
         node1.rain_mm_interval=node1.rain_mm_10s;
-        node1.sample_interval_seconds=SAMPLE_SEC;
+        node1.rain_volume_ml_interval=node1.rain_ml_interval;
+        node1.rain_flow_ml_s=node1.rain_flow_ml_s;
+        node1.rain_volume_total_ml=node1.rain_ml_total;
+        node1.sample_interval_seconds=node1.rain_interval_seconds || SAMPLE_SEC;
+        node1.rain_ml_per_tip=Number(process.env.RAIN_ML_PER_TIP || 27.27);
+        node1.rain_mm_per_tip=Number(process.env.RAIN_MM_PER_TIP || 4.81);
       }
       res.json({node1,node2:b[0]||null,collector:getCollectorV2State()});
     }catch(e){res.status(500).json({error:e.message});}
@@ -60,12 +65,22 @@ function createV2Router(){
         "SELECT * FROM ("+
         "SELECT id,recorded_at,temperature_c,humidity_pct,pressure_hpa,dew_point_c,dew_spread_c,wind_rpm,rain_detected,"+
         "rain_tips_10s,rain_tips_10s AS rain_tips_interval,rain_tips_total,rain_mm_10s,rain_mm_10s AS rain_mm_interval,rain_total_mm,"+
+        "rain_ml_interval,rain_ml_interval AS rain_volume_ml_interval,rain_flow_ml_s,rain_ml_total,rain_ml_total AS rain_volume_total_ml,rain_interval_seconds,"+
         "distance_cm,water_level_cm,aht_valid,bmp_valid,jsn_valid FROM "+DB+".rain_node_readings "+
         "WHERE recorded_at>=? ORDER BY recorded_at DESC,id DESC LIMIT ?"+
         ") AS recent ORDER BY recorded_at ASC,id ASC",
         [from,limit]
       );
-      res.json({hours,count:rows.length,sample_interval_seconds:SAMPLE_SEC,data:rows});
+      res.json({
+        hours,
+        count:rows.length,
+        sample_interval_seconds:SAMPLE_SEC,
+        calibration:{
+          ml_per_tip:Number(process.env.RAIN_ML_PER_TIP || 27.27),
+          mm_per_tip:Number(process.env.RAIN_MM_PER_TIP || 4.81)
+        },
+        data:rows
+      });
     }catch(e){res.status(500).json({error:e.message});}
   });
 
