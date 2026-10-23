@@ -6,6 +6,12 @@ require("dotenv").config();
 function safeDb(name) { return /^[A-Za-z0-9_]+$/.test(String(name || "")) ? String(name) : "floodguard_v2"; }
 function clamp(v, a, b) { return Math.min(b, Math.max(a, v)); }
 function mean(a) { const v = a.filter(Number.isFinite); return v.length ? v.reduce((s, x) => s + x, 0) / v.length : null; }
+function median(a) {
+  const v = a.filter(Number.isFinite).sort((x, y) => x - y);
+  if (!v.length) return null;
+  const m = Math.floor(v.length / 2);
+  return v.length % 2 ? v[m] : (v[m - 1] + v[m]) / 2;
+}
 function round(v, n = 2) { return Number.isFinite(v) ? Number(v.toFixed(n)) : null; }
 function num(v) { if (v === null || v === undefined || v === "") return null; const n = Number(v); return Number.isFinite(n) ? n : null; }
 
@@ -18,6 +24,8 @@ const DANGER_CM = Number(process.env.FLOOD_V2_DANGER_CM || 12);
 const TIDE_HIGH_CM = Number(process.env.FLOOD_V2_TIDE_HIGH_CM || 12);
 const TIDE_COUPLING = clamp(Number(process.env.FLOOD_V2_TIDE_ROAD_COUPLING || 0.35), 0, 2);
 const RAIN_GAIN = clamp(Number(process.env.FLOOD_V2_RAIN_CM_PER_SIM_H || 1.5), 0, 10);
+const RAIN_FLOW_REF_ML_S = Math.max(0.01, Number(process.env.FLOOD_V2_RAIN_FLOW_REF_ML_S || (27.27 / 5)));
+const RAIN_MAX_CONTRIBUTION_CM = Math.max(1, Number(process.env.FLOOD_V2_RAIN_MAX_CONTRIBUTION_CM || 12));
 const ABNORMAL_JUMP_CM = Math.max(1, Number(process.env.FLOOD_V2_ABNORMAL_JUMP_CM || 5));
 const ABNORMAL_WINDOW_SEC = Math.max(10, Number(process.env.FLOOD_V2_ABNORMAL_WINDOW_SECONDS || 30));
 
@@ -37,7 +45,8 @@ function regression(rows) {
 async function loadRoadHistory(minutes = ROAD_WINDOW_MIN) {
   const from = new Date(Date.now() - minutes * 60000);
   const [rows] = await pool.execute(
-    "SELECT id,recorded_at,water_level_cm,jsn_valid,rain_detected,rain_tips_10s FROM " + DB +
+    "SELECT id,recorded_at,water_level_cm,jsn_valid,rain_detected,rain_tips_10s," +
+    "rain_ml_interval,rain_flow_ml_s,rain_interval_seconds FROM " + DB +
     ".rain_node_readings WHERE recorded_at>=? ORDER BY recorded_at ASC,id ASC",
     [from]
   );
@@ -58,6 +67,51 @@ function onsetFactor(rain, horizon) {
   const start = Number(onset.min_sim_hours) || 0;
   if (horizon <= start) return 0.15;
   return clamp((horizon - start) / Math.max(1, horizon), 0.15, 1);
+}
+
+function buildRainFlowModel(rows, rain, scale) {
+  const flows = rows.map(r => num(r.rain_flow_ml_s)).filter(Number.isFinite);
+  const recentFlows = flows.slice(-12);
+  const positiveFlows = flows.filter(v => v > 0.001);
+  const recentFlow = Math.max(0, mean(recentFlows) || 0);
+  const typicalPositiveFlow = Math.max(0, median(positiveFlows) || 0);
+
+  // Learn how many centimeters the road tray rises per milliliter collected.
+  // Each row's rain_ml_interval belongs to the interval ending at that row.
+  const responses = [];
+  for (let i = 1; i < rows.length; i++) {
+    const prev = num(rows[i - 1].water_level_cm);
+    const cur = num(rows[i].water_level_cm);
+    const volume = num(rows[i].rain_ml_interval);
+    const dt = (new Date(rows[i].recorded_at).getTime() - new Date(rows[i - 1].recorded_at).getTime()) / 1000;
+    if (!Number.isFinite(prev) || !Number.isFinite(cur) || !Number.isFinite(volume) || volume <= 0 || !Number.isFinite(dt) || dt <= 0 || dt > 30) continue;
+    const rise = cur - prev;
+    if (rise > 0.01 && rise < ABNORMAL_JUMP_CM) responses.push(rise / volume);
+  }
+
+  // Fallback keeps the former 1.5 cm/sim-hour rule equivalent at one tip/5 s.
+  const oneSimHourRealSeconds = 3600 / scale;
+  const fallbackResponse = RAIN_GAIN / Math.max(1, RAIN_FLOW_REF_ML_S * oneSimHourRealSeconds);
+  const learnedRaw = responses.length >= 3 ? median(responses) : null;
+  const responseCmPerMl = Number.isFinite(learnedRaw)
+    ? clamp(learnedRaw, fallbackResponse * 0.25, fallbackResponse * 4)
+    : fallbackResponse;
+
+  const strength = rainStrength(rain);
+  const baseFutureFlow = typicalPositiveFlow > 0 ? typicalPositiveFlow : RAIN_FLOW_REF_ML_S;
+  const activeFlow = recentFlow > 0 ? recentFlow : baseFutureFlow;
+
+  return {
+    recent_flow_ml_s: recentFlow,
+    typical_positive_flow_ml_s: typicalPositiveFlow,
+    response_cm_per_ml: responseCmPerMl,
+    response_source: Number.isFinite(learnedRaw) ? "LEARNED_FROM_MODEL" : "FALLBACK",
+    calibration_samples: responses.length,
+    predictedFlow(horizon) {
+      if (rain?.rain_active) return activeFlow;
+      return baseFutureFlow * strength * onsetFactor(rain, horizon);
+    }
+  };
 }
 
 function alertFromLevel(v) {
@@ -129,15 +183,25 @@ async function buildFloodForecast(options = {}) {
   const rainRelevant = Boolean(rain?.rain_active || (Number(rain?.rain_risk_score) || 0) >= 56);
   const tideRelevant = Boolean(tide?.available && Number.isFinite(maxTideForecast) && maxTideForecast >= TIDE_HIGH_CM);
   const abnormal = detectAbnormal(valid, rainRelevant, tideRelevant);
-  const rStrength = rainStrength(rain);
+  const rainFlowModel = buildRainFlowModel(valid, rain, scale);
 
   const forecastBase = abnormal.suspected && Number.isFinite(abnormal.baseline_cm) ? abnormal.baseline_cm : current;
 
   const forecast = [1, 2, 3].map(h => {
     const realMin = h * 60 / scale;
     const trendDamp = 1 / (1 + realMin / 4);
-    const trendContribution = clamp(roadSlope * realMin * trendDamp, -3, 5);
-    const rainContribution = RAIN_GAIN * rStrength * onsetFactor(rain, h) * h;
+    const observedRainSlopePerMin = rainFlowModel.recent_flow_ml_s * rainFlowModel.response_cm_per_ml * 60;
+    const residualRoadSlope = rain?.rain_active ? roadSlope - observedRainSlopePerMin : roadSlope;
+    const trendContribution = clamp(residualRoadSlope * realMin * trendDamp, -3, 5);
+
+    const predictedRainFlow = Math.max(0, rainFlowModel.predictedFlow(h));
+    const rainVolumeMl = predictedRainFlow * (h * 3600 / scale);
+    const rainContribution = clamp(
+      rainVolumeMl * rainFlowModel.response_cm_per_ml,
+      0,
+      RAIN_MAX_CONTRIBUTION_CM
+    );
+
     const tf = tideForecastMap.get(h);
     const tideRise = Number.isFinite(tf) && Number.isFinite(currentTide) ? Math.max(0, tf - currentTide) : 0;
     const tideHighExtra = Number.isFinite(tf) ? Math.max(0, tf - TIDE_HIGH_CM) * 0.10 : 0;
@@ -157,6 +221,12 @@ async function buildFloodForecast(options = {}) {
         road_trend: round(trendContribution),
         rain: round(rainContribution),
         tide: round(tideContribution)
+      },
+      rain_flow_model: {
+        predicted_flow_ml_s: round(predictedRainFlow, 2),
+        predicted_volume_ml: round(rainVolumeMl, 1),
+        response_cm_per_ml: round(rainFlowModel.response_cm_per_ml, 5),
+        response_source: rainFlowModel.response_source
       }
     };
   });
@@ -176,7 +246,7 @@ async function buildFloodForecast(options = {}) {
 
   return {
     available: true,
-    model: "FLOOD_FUSION_RULE_V1",
+    model: "FLOOD_FUSION_FLOW_V2",
     generated_at: new Date().toISOString(),
     current: {
       recorded_at: latest.recorded_at,
@@ -197,7 +267,12 @@ async function buildFloodForecast(options = {}) {
       sensor_abnormal_confirmed: abnormal.confirmed,
       abnormal_age_seconds: abnormal.age_seconds,
       abnormal_baseline_cm: abnormal.baseline_cm,
-      max_recent_jump_cm: abnormal.max_jump_cm
+      max_recent_jump_cm: abnormal.max_jump_cm,
+      rain_flow_ml_s: round(rainFlowModel.recent_flow_ml_s, 2),
+      rain_typical_flow_ml_s: round(rainFlowModel.typical_positive_flow_ml_s, 2),
+      rain_response_cm_per_ml: round(rainFlowModel.response_cm_per_ml, 5),
+      rain_response_source: rainFlowModel.response_source,
+      rain_calibration_samples: rainFlowModel.calibration_samples
     },
     thresholds_cm: { watch: WATCH_CM, warning: WARNING_CM, danger: DANGER_CM, tide_high: TIDE_HIGH_CM },
     confidence: round(confidence, 3),
@@ -205,9 +280,9 @@ async function buildFloodForecast(options = {}) {
     time_model: { simulation_scale: scale, one_sim_hour_real_seconds: round(3600 / scale, 2) },
     inputs: { rain_forecast: rain, tide_forecast: tide },
     predictor_rules: {
-      principle: "Forecast road level before threshold crossing by combining current road level/trend with rain forecast and tide forecast.",
+      principle: "Forecast road level by combining residual road-level trend, tipping-bucket rain flow/volume, and tide forecast.",
       anti_false_alarm: "Unsupported abrupt road-level jumps are flagged as abnormal instead of automatically classified as flooding.",
-      note: "This is a configurable rule-based demo model. Coefficients and thresholds should be calibrated from FloodGuard model runs before reporting them as physical flood-depth predictions."
+      note: "Rain response is learned from observed road-level rise per collected milliliter when enough model samples exist; otherwise a conservative fallback equivalent to the previous rain-gain rule is used."
     }
   };
 }
