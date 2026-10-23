@@ -1,4 +1,39 @@
 const API_BASE = String(window.FLOODGUARD_API_BASE_URL || "").replace(/\/$/, "");
+
+function cleanupLegacyUi(){
+  const removeAll = selector => document.querySelectorAll(selector).forEach(node => node.remove());
+
+  // The live JS also cleans cached legacy HTML so the UI stays consistent
+  // immediately after a deployment, even if an old index.html is still cached.
+  removeAll(".alert-title");
+  removeAll(".alert-message");
+  removeAll(".scenario-code");
+  removeAll(".mini-label");
+  removeAll(".node-label");
+  removeAll(".nav-hint");
+  removeAll(".history-note");
+
+  const headerSubtitle = document.querySelector(".dashboard-header > div:first-child > p");
+  if(headerSubtitle) headerSubtitle.remove();
+
+  document.querySelectorAll(".sensor-metric small:not([id])").forEach(node => node.remove());
+  document.querySelectorAll(".history-control-card p").forEach(node => node.remove());
+
+  const statusTable = document.querySelector(".status-table");
+  if(statusTable){
+    const headCells = statusTable.querySelectorAll("thead th");
+    if(headCells.length >= 3) headCells[2].remove();
+    statusTable.querySelectorAll("tbody tr").forEach(row => {
+      const cells = row.querySelectorAll("td");
+      if(cells.length >= 3) cells[2].remove();
+    });
+  }
+
+  const footer = document.querySelector(".dashboard-footer");
+  if(footer) footer.textContent = "FloodGuard";
+}
+
+cleanupLegacyUi();
 const el = id => document.getElementById(id);
 const num = v => (v === null || v === undefined || v === "" || !Number.isFinite(Number(v))) ? null : Number(v);
 const fmt = (v,d=1) => num(v) === null ? "--" : num(v).toFixed(d);
