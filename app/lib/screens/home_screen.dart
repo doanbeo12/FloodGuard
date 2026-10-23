@@ -573,6 +573,10 @@ class _HomeScreenState extends State<HomeScreen> {
         ? (node1['rain_tips_interval'] ?? node1['rain_tips_10s'] ?? '--')
         : '--';
     final total = n1Fresh ? (node1['rain_tips_total'] ?? '--') : '--';
+    final flow = n1Fresh ? f(node1['rain_flow_ml_s'], 2) : '--';
+    final volume = n1Fresh
+        ? f(node1['rain_volume_ml_interval'] ?? node1['rain_ml_interval'], 1)
+        : '--';
 
     return Container(
       padding: const EdgeInsets.all(14),
@@ -598,7 +602,9 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
           ),
           Text(
-            tips.toString() + ' lần / mẫu\nTổng ' + total.toString(),
+            flow + ' ml/s\n' +
+                volume + ' ml / mẫu\n' +
+                tips.toString() + ' gàu • Tổng ' + total.toString(),
             textAlign: TextAlign.right,
             style: const TextStyle(
               fontSize: 10,
