@@ -15,7 +15,7 @@ jobs:
       run:
         working-directory: app
     env:
-      FLOODGUARD_API_URL: "https://backend-production-189c.up.railway.app"
+      FLOODGUARD_API_URL: "https://floodguard-backend-4dua.onrender.com"
 
     steps:
       - name: Checkout
