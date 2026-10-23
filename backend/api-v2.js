@@ -4,6 +4,7 @@ const { buildTideForecast } = require("./tide-predictor-v2");
 const { buildRainForecast } = require("./rain-predictor-v2");
 const { buildFloodForecast } = require("./flood-predictor-v2");
 const { getCollectorV2State, publishNode2Command } = require("./mqtt-collector-v2");
+const { setRainFavorableDemo, getRainFavorableDemo, applyRainFavorableEnvironment } = require("./demo-state-v2");
 require("dotenv").config();
 
 function safeDb(name){return /^[A-Za-z0-9_]+$/.test(String(name||""))?String(name):"floodguard_v2";}
@@ -27,8 +28,9 @@ function createV2Router(){
         pool.query("SELECT * FROM "+DB+".rain_node_readings ORDER BY recorded_at DESC,id DESC LIMIT 1"),
         pool.query("SELECT * FROM "+DB+".tide_node_readings ORDER BY recorded_at DESC,id DESC LIMIT 1")
       ]);
-      const node1=a[0]||null;
+      let node1=a[0]||null;
       if(node1){
+        node1=applyRainFavorableEnvironment(node1);
         node1.rain_tips_interval=node1.rain_tips_10s;
         node1.rain_mm_interval=node1.rain_mm_10s;
         node1.rain_volume_ml_interval=node1.rain_ml_interval;
@@ -38,7 +40,12 @@ function createV2Router(){
         node1.rain_ml_per_tip=Number(process.env.RAIN_ML_PER_TIP || 27.27);
         node1.rain_mm_per_tip=Number(process.env.RAIN_MM_PER_TIP || 4.81);
       }
-      res.json({node1,node2:b[0]||null,collector:getCollectorV2State()});
+      res.json({
+        node1,
+        node2:b[0]||null,
+        collector:getCollectorV2State(),
+        demo:{rain_favorable:getRainFavorableDemo()}
+      });
     }catch(e){res.status(500).json({error:e.message});}
   });
 
@@ -113,6 +120,16 @@ function createV2Router(){
       });
       res.status(result.available?200:202).json(result);
     }catch(e){console.error("[API v2 flood forecast]",e);res.status(500).json({available:false,error:e.message});}
+  });
+
+  r.get("/demo/rain-favorable",(req,res)=>{
+    res.json({ok:true,rain_favorable:getRainFavorableDemo()});
+  });
+
+  r.post("/demo/rain-favorable",(req,res)=>{
+    const enabled=req.body?.enabled===true || req.body?.enabled===1 || req.body?.enabled==="1" || req.body?.enabled==="true";
+    const state=setRainFavorableDemo(enabled);
+    res.json({ok:true,rain_favorable:state});
   });
 
   r.post("/node2/fault/reset",async(req,res)=>{
