@@ -5,7 +5,7 @@ import 'package:http/http.dart' as http;
 class ApiService {
   static const String _configuredBaseUrl = String.fromEnvironment(
     'API_BASE_URL',
-    defaultValue: 'https://backend-production-189c.up.railway.app',
+    defaultValue: 'https://floodguard-backend-4dua.onrender.com',
   );
 
   static String get baseUrl => _configuredBaseUrl.endsWith('/')
