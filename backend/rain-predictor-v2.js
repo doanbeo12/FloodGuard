@@ -1,4 +1,5 @@
 const { pool } = require("./db-v2");
+const { getRainFavorableDemo, applyRainFavorableEnvironment } = require("./demo-state-v2");
 require("dotenv").config();
 
 function safeDb(name) {
@@ -133,17 +134,33 @@ async function buildRainForecast(options = {}) {
   const rainSensorWet = recent.some(r => Number(r.rain_detected) === 1);
   const rainActive = rainSensorWet || recentTips > 0;
 
-  const temp = num(latest.temperature_c);
-  const humidity = num(latest.humidity_pct);
-  const pressure = num(latest.pressure_hpa);
-  const dewSpread = num(latest.dew_spread_c);
-  const wind = num(latest.wind_rpm);
+  const rawCurrent = {
+    temperature_c: num(latest.temperature_c),
+    humidity_pct: num(latest.humidity_pct),
+    pressure_hpa: num(latest.pressure_hpa),
+    dew_spread_c: num(latest.dew_spread_c),
+    wind_rpm: num(latest.wind_rpm)
+  };
+  const demo = getRainFavorableDemo();
+  const effective = applyRainFavorableEnvironment(rawCurrent) || rawCurrent;
+  const temp = num(effective.temperature_c);
+  const humidity = num(effective.humidity_pct);
+  const pressure = num(effective.pressure_hpa);
+  const dewSpread = num(effective.dew_spread_c);
+  const wind = num(effective.wind_rpm);
 
-  const humiditySlope = regression(rows, "humidity_pct");
-  const pressureSlope = regression(rows, "pressure_hpa");
-  const tempSlope = regression(rows, "temperature_c");
-  const dewSlope = regression(rows, "dew_spread_c");
-  const windSlope = regression(rows, "wind_rpm");
+  const rawHumiditySlope = regression(rows, "humidity_pct");
+  const rawPressureSlope = regression(rows, "pressure_hpa");
+  const rawTempSlope = regression(rows, "temperature_c");
+  const rawDewSlope = regression(rows, "dew_spread_c");
+  const rawWindSlope = regression(rows, "wind_rpm");
+
+  const p = demo.enabled ? demo.progress : 0;
+  const humiditySlope = rawHumiditySlope + 0.70 * p;
+  const pressureSlope = rawPressureSlope - 0.32 * p;
+  const tempSlope = rawTempSlope - 0.15 * p;
+  const dewSlope = rawDewSlope - 0.25 * p;
+  const windSlope = rawWindSlope + 20 * p;
   const firstHalfWind = median(rows.slice(0, Math.max(1, Math.floor(rows.length / 2))).map(r => num(r.wind_rpm)));
 
   const components = {
@@ -156,6 +173,10 @@ async function buildRainForecast(options = {}) {
 
   const temperatureSupport = tempSlope <= -0.15 ? 5 : tempSlope <= -0.05 ? 2 : 0;
   score = clamp(score + temperatureSupport, 0, 100);
+  if (demo.enabled) {
+    const demoScoreFloor = clamp(32 + 53 * demo.progress, 0, 85);
+    score = Math.max(score, demoScoreFloor);
+  }
 
   const validAht = rows.filter(r => Number(r.aht_valid) === 1).length / rows.length;
   const validBmp = rows.filter(r => Number(r.bmp_valid) === 1).length / rows.length;
@@ -184,6 +205,14 @@ async function buildRainForecast(options = {}) {
       dew_spread_c: round(dewSpread),
       wind_rpm: round(wind)
     },
+    raw_sensor_current: {
+      temperature_c: round(rawCurrent.temperature_c),
+      humidity_pct: round(rawCurrent.humidity_pct),
+      pressure_hpa: round(rawCurrent.pressure_hpa),
+      dew_spread_c: round(rawCurrent.dew_spread_c),
+      wind_rpm: round(rawCurrent.wind_rpm)
+    },
+    demo_environment: demo,
     trends_per_real_minute: {
       temperature_c: round(tempSlope, 3),
       humidity_pct: round(humiditySlope, 3),
@@ -205,7 +234,7 @@ async function buildRainForecast(options = {}) {
     predictor_rules: {
       forecast_inputs: ["humidity_pct", "pressure_hpa", "dew_spread_c", "temperature_c", "wind_rpm"],
       confirmation_inputs: ["rain_detected", "rain_tips_interval"],
-      note: "Rain sensor and tipping bucket confirm rain after onset; they do not create the pre-rain score. Score is a demo rule index, not a calibrated meteorological probability."
+      note: "Rain sensor and tipping bucket confirm rain after onset. The favorable-rain demo scenario modifies only forecast/display inputs in memory and does not overwrite sensor records in the database."
     }
   };
 }
