@@ -103,12 +103,14 @@ function renderLatest(d){
   if(el("roadMarker")) el("roadMarker").style.left=Math.max(0,Math.min(100,(road||0)/16*100))+"%";
   if(el("tideMarker")) el("tideMarker").style.left=Math.max(0,Math.min(100,(tide||0)/16*100))+"%";
 
-  const raining=Number(n1.rain_detected)===1;
-  el("rainState").textContent=raining?"ĐANG MƯA":"KHÔ";
-  el("rainState").style.color=raining?"#1769aa":"#159447";
-  setBadge(el("rainStateBadge"),raining?"MƯA":"KHÔ",raining?"RAIN_ACTIVE":"NORMAL");
-  el("tipsInterval").textContent=(n1.rain_tips_interval ?? n1.rain_tips_10s ?? "--");
-  el("tipsTotal").textContent=(n1.rain_tips_total ?? "--");
+  const raining=node1Fresh && Number(n1.rain_detected)===1;
+  el("rainState").textContent=node1Fresh?(raining?"ĐANG MƯA":"KHÔ"):"MẤT KẾT NỐI";
+  el("rainState").style.color=!node1Fresh?"#6b7280":(raining?"#1769aa":"#159447");
+  setBadge(el("rainStateBadge"),node1Fresh?(raining?"MƯA":"KHÔ"):"MẤT KẾT NỐI",node1Fresh?(raining?"RAIN_ACTIVE":"NORMAL"):"WARNING");
+  el("rainFlow").textContent=node1Fresh?fmt(n1.rain_flow_ml_s,2)+" ml/s":"--";
+  el("rainVolume").textContent=node1Fresh?fmt(n1.rain_volume_ml_interval ?? n1.rain_ml_interval,1)+" ml":"--";
+  el("tipsInterval").textContent=node1Fresh?(n1.rain_tips_interval ?? n1.rain_tips_10s ?? "--"):"--";
+  el("tipsTotal").textContent=node1Fresh?(n1.rain_tips_total ?? "--"):"--";
 
   el("temperature").textContent=fmt(n1.temperature_c)+" °C";
   el("humidity").textContent=fmt(n1.humidity_pct)+" %";
