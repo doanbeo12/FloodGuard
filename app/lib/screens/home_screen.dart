@@ -18,6 +18,7 @@ class _HomeScreenState extends State<HomeScreen> {
   bool loading = true;
   bool refreshing = false;
   bool clearingFault = false;
+  bool demoBusy = false;
   String? error;
   int tab = 0;
   Timer? timer;
@@ -87,10 +88,43 @@ class _HomeScreenState extends State<HomeScreen> {
   Map<String, dynamic> get rain => m(forecast['rain']);
   Map<String, dynamic> get tide => m(forecast['tide']);
   Map<String, dynamic> get flood => m(forecast['flood']);
+  Map<String, dynamic> get demo => m(latest['demo']);
+  Map<String, dynamic> get rainDemo => m(demo['rain_favorable']);
+
+  bool get rainDemoEnabled {
+    final value = rainDemo['enabled'];
+    return value == true ||
+        value == 1 ||
+        value?.toString() == '1' ||
+        value?.toString().toLowerCase() == 'true';
+  }
 
   bool get node2FaultActive {
     final value = node2Live['fault'];
     return value == true || value == 1 || value?.toString() == '1' || value?.toString().toLowerCase() == 'true';
+  }
+
+  Future<void> toggleRainDemo() async {
+    if (demoBusy) return;
+    final target = !rainDemoEnabled;
+    setState(() => demoBusy = true);
+    try {
+      final result = await ApiService.setRainFavorableDemo(target);
+      if (!mounted) return;
+      setState(() {
+        latest['demo'] = {
+          'rain_favorable': m(result['rain_favorable']),
+        };
+      });
+      await loadData();
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Không đổi được chế độ demo: ' + e.toString())),
+      );
+    } finally {
+      if (mounted) setState(() => demoBusy = false);
+    }
   }
 
   Future<void> clearNode2Fault() async {
@@ -235,6 +269,7 @@ class _HomeScreenState extends State<HomeScreen> {
         child: Column(
           children: [
             Expanded(child: page()),
+            rainDemoControl(),
             NavigationBar(
               selectedIndex: tab,
               onDestinationSelected: (value) => setState(() => tab = value),
@@ -257,6 +292,38 @@ class _HomeScreenState extends State<HomeScreen> {
               ],
             ),
           ],
+        ),
+      ),
+    );
+  }
+
+  Widget rainDemoControl() {
+    final active = rainDemoEnabled;
+    return Container(
+      width: double.infinity,
+      color: Colors.white,
+      padding: const EdgeInsets.fromLTRB(14, 8, 14, 8),
+      child: FilledButton.icon(
+        onPressed: demoBusy ? null : toggleRainDemo,
+        style: FilledButton.styleFrom(
+          backgroundColor:
+              active ? const Color(0xFFEF9A2D) : const Color(0xFF1769AA),
+          foregroundColor: Colors.white,
+          minimumSize: const Size.fromHeight(44),
+        ),
+        icon: demoBusy
+            ? const SizedBox(
+                width: 18,
+                height: 18,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  color: Colors.white,
+                ),
+              )
+            : const Icon(Icons.cloud_outlined),
+        label: Text(
+          'Điều kiện có lợi cho mưa: ' + (active ? 'BẬT' : 'TẮT'),
+          style: const TextStyle(fontWeight: FontWeight.bold),
         ),
       ),
     );
