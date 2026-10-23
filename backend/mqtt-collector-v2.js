@@ -18,10 +18,11 @@ const TS = process.env.MQTT_V2_TOPIC_STATUS || "floodguard/v2/central/status";
 const TC = process.env.MQTT_V2_TOPIC_COMMAND || "floodguard/v2/central/command";
 const SAVE_MS = Math.max(1000, Number(process.env.DB_V2_SAMPLE_INTERVAL_MS || 5000));
 const FRESH_MS = Math.max(SAVE_MS * 2, Number(process.env.MQTT_V2_FRESHNESS_MS || 30000));
-const MM_PER_TIP = Number(process.env.RAIN_MM_PER_TIP || 0);
+const MM_PER_TIP = Number(process.env.RAIN_MM_PER_TIP || 4.81);
+const ML_PER_TIP = Number(process.env.RAIN_ML_PER_TIP || 27.27);
 
 const state = {
-  n1: null, n2: null, last1: null, last2: null, lastTips: null,
+  n1: null, n2: null, last1: null, last2: null, lastTips: null, lastTipsAt: null,
   central: "unknown", centralAt: null, lastSave: null, busy: false, timer: null,
   client: null, lastCommandAt: null, lastCommand: null
 };
@@ -34,24 +35,36 @@ async function saveNode1(s, at) {
   const tips = int(d.rainTipsTotal);
   let tips10s = 0;
   if (tips != null && state.lastTips != null && tips >= state.lastTips) tips10s = tips - state.lastTips;
+  const intervalSeconds = state.lastTipsAt
+    ? Math.max(0.001, (at.getTime() - state.lastTipsAt.getTime()) / 1000)
+    : SAVE_MS / 1000;
+  const mlInterval = ML_PER_TIP > 0 ? tips10s * ML_PER_TIP : null;
+  const flowMlS = mlInterval != null ? mlInterval / intervalSeconds : null;
+  const mlTotal = ML_PER_TIP > 0 && tips != null ? tips * ML_PER_TIP : null;
   const mm10s = MM_PER_TIP > 0 ? tips10s * MM_PER_TIP : null;
   const mmTotal = MM_PER_TIP > 0 && tips != null ? tips * MM_PER_TIP : null;
 
   const sql = "INSERT INTO " + DB + ".rain_node_readings " +
     "(node_id,seq,node_uptime_ms,temperature_c,humidity_pct,pressure_hpa,dew_point_c,dew_spread_c," +
     "hall_frequency_hz,rotation_hz,wind_rpm,rain_detected,rain_tips_10s,rain_tips_total,rain_mm_10s,rain_total_mm," +
+    "rain_ml_interval,rain_flow_ml_s,rain_ml_total,rain_interval_seconds," +
     "distance_cm,water_level_cm,aht_valid,bmp_valid,jsn_valid,mqtt_received_at,recorded_at) " +
-    "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)";
+    "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)";
 
   await pool.execute(sql, [
     int(d.nodeId) || 1, seq, int(d.uptimeMs), num(d.temperatureC), num(d.humidityPct), num(d.pressureHpa),
     num(d.dewPointC), num(d.dewSpreadC), num(d.hallFrequencyHz), num(d.rotationHz), num(d.windRpm),
-    bit(d.rainDetected), tips10s, tips || 0, mm10s, mmTotal, num(d.distanceCm), num(d.waterLevelCm),
+    bit(d.rainDetected), tips10s, tips || 0, mm10s, mmTotal,
+    mlInterval, flowMlS, mlTotal, intervalSeconds,
+    num(d.distanceCm), num(d.waterLevelCm),
     bit(d.ahtValid), bit(d.bmpValid), bit(d.jsnValid), s.receivedAt, at
   ]);
 
   state.last1 = seq;
-  if (tips != null) state.lastTips = tips;
+  if (tips != null) {
+    state.lastTips = tips;
+    state.lastTipsAt = at;
+  }
   return true;
 }
 
