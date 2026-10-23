@@ -1,4 +1,4 @@
-const { pool } = require("./db");
+const { pool } = require("./db-v2");
 const { buildRainForecast } = require("./rain-predictor-v2");
 const { buildTideForecast } = require("./tide-predictor-v2");
 require("dotenv").config();
