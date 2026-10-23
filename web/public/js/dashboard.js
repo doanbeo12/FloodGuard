@@ -82,18 +82,18 @@ function renderLatest(d){
   el("windRpm").textContent=fmt(n1.wind_rpm,0)+" RPM";
   el("rainSensor").textContent=raining?"ƯỚT":"KHÔ";
 
-  setBadge(el("station1Badge"),"Trạm mưa: "+(node1Fresh?"trực tuyến":"quá hạn"),node1Fresh?"NORMAL":"WARNING");
-  setBadge(el("station2Badge"),"Trạm triều: "+(node2Fresh?"trực tuyến":"quá hạn"),node2Fresh?"NORMAL":"WARNING");
-  setBadge(el("centralBadge"),"Trạm trung tâm: "+(centralFresh?"trực tuyến":"quá hạn"),centralFresh?"NORMAL":"WARNING");
+  setBadge(el("station1Badge"),"Trạm mưa: "+(node1Fresh?"trực tuyến":"mất kết nối"),node1Fresh?"NORMAL":"WARNING");
+  setBadge(el("station2Badge"),"Trạm triều: "+(node2Fresh?"trực tuyến":"mất kết nối"),node2Fresh?"NORMAL":"WARNING");
+  setBadge(el("centralBadge"),"Trạm trung tâm: "+(centralFresh?"trực tuyến":"mất kết nối"),centralFresh?"NORMAL":"WARNING");
 
   el("station1Time").textContent=timeText(t1);
   el("station2Time").textContent=timeText(t2);
-  el("centralStatus").textContent=centralFresh?"TRỰC TUYẾN":"QUÁ HẠN";
+  el("centralStatus").textContent=centralFresh?"TRỰC TUYẾN":"MẤT KẾT NỐI";
   el("lastSave").textContent=timeText(c.lastSaveAt);
 
-  if(el("station1StatusTable")) el("station1StatusTable").textContent=(node1Fresh?"Trực tuyến • ":"Quá hạn • ")+timeText(t1);
-  if(el("station2StatusTable")) el("station2StatusTable").textContent=(node2Fresh?"Trực tuyến • ":"Quá hạn • ")+timeText(t2);
-  if(el("centralStatusTable")) el("centralStatusTable").textContent=centralFresh?"Trực tuyến":"Quá hạn / chưa có heartbeat mới";
+  if(el("station1StatusTable")) el("station1StatusTable").textContent=(node1Fresh?"Trực tuyến • ":"Mất kết nối • ")+timeText(t1);
+  if(el("station2StatusTable")) el("station2StatusTable").textContent=(node2Fresh?"Trực tuyến • ":"Mất kết nối • ")+timeText(t2);
+  if(el("centralStatusTable")) el("centralStatusTable").textContent=centralFresh?"Trực tuyến":"Mất kết nối";
   if(el("serverStatusTable")) el("serverStatusTable").textContent="API hoạt động • lưu gần nhất "+timeText(c.lastSaveAt);
 }
 function trendText(v,unit){
