@@ -163,7 +163,7 @@ function renderForecast(d){
     el("tideNoData").classList.add("d-none");
     el("tideTrend").textContent=label[tide.current?.trend]||tide.current?.trend||"--";
     setBadge(el("tideConfidenceBadge"),"Tin cậy "+(label[tide.confidence_label]||tide.confidence_label||"--"),tide.confidence_label==="HIGH"?"NORMAL":tide.confidence_label==="MEDIUM"?"WATCH":"UNKNOWN");
-    el("tideForecastRows").innerHTML=(tide.forecast||[]).map(x=>'<div class="forecast-row"><span>+'+x.horizon_sim_hours+' giờ</span><strong>'+fmt(x.level_cm)+' cm</strong><em>'+((x.method==="SEASONAL_HISTORY")?"Theo chu kỳ":"Theo xu hướng")+'</em></div>').join("") || '<div class="empty-note">Chưa có điểm dự báo.</div>';
+    el("tideForecastRows").innerHTML=(tide.forecast||[]).map(x=>'<div class="forecast-row"><span>'+x.horizon_sim_hours+' giờ</span><strong>'+fmt(x.level_cm)+' cm</strong><em>'+((x.method==="SEASONAL_HISTORY")?"Theo chu kỳ":"Theo xu hướng")+'</em></div>').join("") || '<div class="empty-note">Chưa có điểm dự báo.</div>';
     const cyc=tide.learned_cycle;
     el("tideCycleInfo").textContent=cyc?"Chu kỳ học được: khoảng "+fmt(cyc.period_sim_hours,2)+" giờ mô phỏng • "+cyc.approximate_cycles_in_history+" chu kỳ":"Chưa nhận dạng được chu kỳ rõ.";
   }else{
@@ -176,7 +176,7 @@ function renderForecast(d){
     setBadge(el("floodBadge"),label[lvl]||lvl,lvl);
     const cur=flood.current||{};
     el("roadTrend").textContent=(label[cur.road_trend]||cur.road_trend||"--")+" • "+fmt(cur.road_slope_cm_per_real_min,3)+" cm/phút";
-    el("floodForecastRows").innerHTML=(flood.forecast||[]).map(x=>'<div class="forecast-row"><span>+'+x.horizon_sim_hours+' giờ</span><strong>'+fmt(x.road_level_cm)+' cm</strong><em>'+(label[x.alert_level]||x.alert_level)+'</em></div>').join("");
+    el("floodForecastRows").innerHTML=(flood.forecast||[]).map(x=>'<div class="forecast-row"><span>'+x.horizon_sim_hours+' giờ</span><strong>'+fmt(x.road_level_cm)+' cm</strong><em>'+(label[x.alert_level]||x.alert_level)+'</em></div>').join("");
     const cause=flood.predicted_cause?.label || "--";
     const wc=el("warningCard"); wc.className="dashboard-card warning-card "+(lvl==="WATCH"?"watch":lvl==="WARNING"?"warning":lvl==="DANGER"?"danger":"normal");
     setBadge(el("floodTopBadge"),label[lvl]||lvl,lvl);
