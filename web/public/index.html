@@ -15,7 +15,6 @@
     <div>
       <div class="eyebrow">FLOODGUARD • IOT FLOOD MONITORING</div>
       <h1>HỆ THỐNG GIÁM SÁT, DỰ BÁO VÀ CẢNH BÁO SỚM NGẬP LỤT ĐÔ THỊ</h1>
-      <p>Trạm mưa và ngập đường • Trạm triều • Trạm trung tâm</p>
     </div>
     <div class="header-status text-end">
       <div id="clock" class="clock">--:--:--</div>
@@ -33,7 +32,6 @@
     <a class="dashboard-nav-link" href="#forecastSection"><i class="fa-solid fa-chart-line"></i> Dự báo</a>
     <a class="dashboard-nav-link" href="#historySection"><i class="fa-solid fa-clock-rotate-left"></i> Lịch sử</a>
     <a class="dashboard-nav-link" href="#statusSection"><i class="fa-solid fa-server"></i> Trạng thái</a>
-    <span class="nav-hint"><i class="fa-solid fa-arrows-rotate"></i> Tự cập nhật mỗi 5 giây</span>
   </nav>
 
   <main>
@@ -43,9 +41,7 @@
           <article class="dashboard-card">
             <div class="card-header-custom">
               <span><i class="fa-solid fa-road-water"></i> MỰC NƯỚC ĐƯỜNG</span>
-              <span class="mini-label">Trạm mưa và ngập đường</span>
             </div>
-            <div class="node-label">Mực nước hiện tại</div>
             <div class="node-value"><span id="roadLevel">--</span> <small>cm</small></div>
             <div class="water-track"><div class="water-zone"></div><div id="roadMarker" class="water-marker"></div></div>
             <div class="node-info">
@@ -59,9 +55,7 @@
           <article class="dashboard-card">
             <div class="card-header-custom">
               <span><i class="fa-solid fa-water"></i> MỰC TRIỀU</span>
-              <span class="mini-label">Trạm triều</span>
             </div>
-            <div class="node-label">Mực triều hiện tại</div>
             <div class="node-value"><span id="tideLevel">--</span> <small>cm</small></div>
             <div class="water-track tide-track"><div class="water-zone"></div><div id="tideMarker" class="water-marker"></div></div>
             <div class="node-info">
@@ -77,7 +71,6 @@
               <span><i class="fa-solid fa-cloud-rain"></i> TRẠNG THÁI MƯA</span>
               <span id="rainStateBadge" class="status-pill muted">--</span>
             </div>
-            <div class="node-label">Cảm biến xác nhận</div>
             <div id="rainState" class="rain-state-value">--</div>
             <div class="node-info">
               <div><span>Gàu lật / mẫu</span><strong id="tipsInterval">--</strong></div>
@@ -108,11 +101,8 @@
           <div class="alert-topline">
             <div>
               <div class="alert-kicker">TRẠNG THÁI HỆ THỐNG</div>
-              <div class="alert-title">Giám sát thời gian thực</div>
             </div>
-            <code class="scenario-code">5 GIÂY / MẪU</code>
           </div>
-          <div class="alert-message">Dữ liệu cảm biến được chuyển từ hai trạm về trạm trung tâm bằng ESP-NOW, sau đó gửi qua mạng 4G/MQTT lên máy chủ và cơ sở dữ liệu.</div>
           <div class="alert-detail-grid">
             <div><span>Trạm mưa</span><strong id="station1Time">--</strong></div>
             <div><span>Trạm triều</span><strong id="station2Time">--</strong></div>
@@ -130,7 +120,7 @@
           <div class="sensor-metric"><span>Áp suất</span><strong id="pressure">-- hPa</strong><small id="pressureTrend">Xu hướng: --</small></div>
           <div class="sensor-metric"><span>Chênh lệch điểm sương</span><strong id="dewSpread">-- °C</strong><small id="dewTrend">Xu hướng: --</small></div>
           <div class="sensor-metric"><span>Tốc độ quay cốc gió</span><strong id="windRpm">-- RPM</strong><small id="windTrend">Xu hướng: --</small></div>
-          <div class="sensor-metric"><span>Cảm biến mưa</span><strong id="rainSensor">--</strong><small>Dùng để xác nhận mưa đã bắt đầu</small></div>
+          <div class="sensor-metric"><span>Cảm biến mưa</span><strong id="rainSensor">--</strong></div>
         </div>
       </section>
     </section>
@@ -209,9 +199,7 @@
         <div class="col-xl-3">
           <section class="dashboard-card h-100 history-control-card">
             <div class="card-header-custom"><span><i class="fa-solid fa-clock-rotate-left"></i> LỊCH SỬ</span></div>
-            <p>Biểu đồ lấy dữ liệu trong 1 giờ gần nhất và tự cập nhật mỗi 30 giây.</p>
             <button id="refreshBtn" class="btn btn-primary w-100"><i class="fa-solid fa-rotate"></i> Làm mới ngay</button>
-            <div class="history-note">Dữ liệu được đọc từ cơ sở dữ liệu, không lấy trực tiếp từ trình duyệt MQTT.</div>
           </section>
         </div>
       </div>
@@ -221,19 +209,19 @@
       <div class="box-title"><i class="fa-solid fa-server"></i> Trạng thái dữ liệu và thiết bị</div>
       <div class="table-responsive">
         <table class="table align-middle mb-0 status-table">
-          <thead><tr><th>Thành phần</th><th>Trạng thái / thời gian</th><th>Vai trò</th></tr></thead>
+          <thead><tr><th>Thành phần</th><th>Trạng thái / thời gian</th></tr></thead>
           <tbody>
-            <tr><td>Trạm mưa và ngập đường</td><td id="station1StatusTable">Theo dõi ở badge phía trên</td><td>AHT20, BMP180, gàu lật, cốc gió, cảm biến mưa, JSN-SR04T</td></tr>
-            <tr><td>Trạm triều</td><td id="station2StatusTable">Theo dõi ở badge phía trên</td><td>JSN-SR04T và hệ bơm tạo chu kỳ triều mô hình</td></tr>
-            <tr><td>Trạm trung tâm</td><td id="centralStatusTable">--</td><td>ESP-NOW → SIM 4G → MQTT</td></tr>
-            <tr><td>Máy chủ / cơ sở dữ liệu</td><td id="serverStatusTable">--</td><td>Nhận MQTT, lưu dữ liệu 5 giây/lần, cung cấp API</td></tr>
+            <tr><td>Trạm mưa và ngập đường</td><td id="station1StatusTable">--</td></tr>
+            <tr><td>Trạm triều</td><td id="station2StatusTable">--</td></tr>
+            <tr><td>Trạm trung tâm</td><td id="centralStatusTable">--</td></tr>
+            <tr><td>Máy chủ / cơ sở dữ liệu</td><td id="serverStatusTable">--</td></tr>
           </tbody>
         </table>
       </div>
     </section>
   </main>
 
-  <footer class="dashboard-footer">FloodGuard • Các giá trị dự báo phục vụ mô hình thực nghiệm</footer>
+  <footer class="dashboard-footer">FloodGuard</footer>
 </div>
 <script src="/config.js"></script>
 <script src="js/dashboard.js"></script>
