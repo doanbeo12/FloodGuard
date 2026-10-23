@@ -1,3 +1,6 @@
+if (String(process.env.DB_DRIVER || "").toLowerCase() === "postgres") {
+  require("./server-v2-render");
+} else {
 const express = require("express");
 const cors = require("cors");
 require("dotenv").config();
@@ -736,3 +739,5 @@ app.listen(PORT, async () => {
 
     startTideScheduler();
 });
+
+}
