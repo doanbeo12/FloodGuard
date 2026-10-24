@@ -11,6 +11,25 @@ function safeDb(name){return /^[A-Za-z0-9_]+$/.test(String(name||""))?String(nam
 function clamp(v,a,b,fallback){const n=Number(v);return Number.isFinite(n)?Math.min(b,Math.max(a,n)):fallback;}
 const DB=safeDb(process.env.V2_DB_NAME||"floodguard_v2");
 const SAMPLE_SEC=Math.max(1,Number(process.env.DB_V2_SAMPLE_INTERVAL_MS||5000)/1000);
+const LIVE_TIMEOUT_MS=30000;
+
+function isFreshTimestamp(value){
+  const timestamp=value?new Date(value).getTime():NaN;
+  const age=Date.now()-timestamp;
+  return Number.isFinite(age) && age>=-5000 && age<=LIVE_TIMEOUT_MS;
+}
+
+function liveNodes(){
+  const c=getCollectorV2State();
+  return {
+    node1:isFreshTimestamp(c.node1LastReceivedAt),
+    node2:isFreshTimestamp(c.node2LastReceivedAt)
+  };
+}
+
+function unavailableForecast(label){
+  return {available:false,reason:"NODE_OFFLINE",message:label+" mất kết nối; tạm dừng dự báo trực tiếp. Dữ liệu lịch sử vẫn được lưu."};
+}
 
 function createV2Router(){
   const r=express.Router();
@@ -44,6 +63,7 @@ function createV2Router(){
         node1,
         node2:b[0]||null,
         collector:getCollectorV2State(),
+        live:liveNodes(),
         demo:{rain_favorable:getRainFavorableDemo()}
       });
     }catch(e){res.status(500).json({error:e.message});}
@@ -93,6 +113,7 @@ function createV2Router(){
 
   r.get("/tide/forecast",async(req,res)=>{
     try{
+      if(!liveNodes().node2)return res.status(202).json(unavailableForecast("Trạm triều"));
       const result=await buildTideForecast({
         historyHours:clamp(req.query.history_hours,6,18,undefined),
         recentMinutes:clamp(req.query.recent_minutes,5,15,undefined),
@@ -104,6 +125,7 @@ function createV2Router(){
 
   r.get("/rain/forecast",async(req,res)=>{
     try{
+      if(!liveNodes().node1)return res.status(202).json(unavailableForecast("Trạm mưa"));
       const result=await buildRainForecast({
         windowMinutes:clamp(req.query.window_minutes,5,60,undefined),
         simTimeScale:clamp(req.query.sim_scale,1,3600,undefined)
@@ -114,6 +136,8 @@ function createV2Router(){
 
   r.get("/flood/forecast",async(req,res)=>{
     try{
+      const live=liveNodes();
+      if(!live.node1||!live.node2)return res.status(202).json(unavailableForecast("Một hoặc cả hai trạm đo"));
       const result=await buildFloodForecast({
         roadMinutes:clamp(req.query.road_minutes,1,15,undefined),
         simTimeScale:clamp(req.query.sim_scale,1,3600,undefined)
@@ -143,10 +167,11 @@ function createV2Router(){
 
   r.get("/forecast",async(req,res)=>{
     const scale=clamp(req.query.sim_scale,1,3600,undefined);
+    const live=liveNodes();
     const results=await Promise.allSettled([
-      buildRainForecast({simTimeScale:scale}),
-      buildTideForecast({simTimeScale:scale}),
-      buildFloodForecast({simTimeScale:scale})
+      live.node1?buildRainForecast({simTimeScale:scale}):Promise.resolve(unavailableForecast("Trạm mưa")),
+      live.node2?buildTideForecast({simTimeScale:scale}):Promise.resolve(unavailableForecast("Trạm triều")),
+      live.node1&&live.node2?buildFloodForecast({simTimeScale:scale}):Promise.resolve(unavailableForecast("Một hoặc cả hai trạm đo"))
     ]);
     const pack=(item,name)=>{
       if(item.status==="fulfilled") return item.value;
