@@ -101,6 +101,23 @@ async function start() {
     await ensurePostgresSchema();
     await checkDatabase();
     console.log("[DB v2] Connected");
+    // Single startup audit against real stored samples; never modifies the DB.
+    setTimeout(async () => {
+      try {
+        const { buildTideForecast } = require("./tide-predictor-v2");
+        const result = await buildTideForecast({simTimeScale:60});
+        console.log("[TIDE FORECAST AUDIT]", JSON.stringify({
+          available:result.available, reason:result.reason||null,
+          history:result.history||null,
+          cycle:result.learned_cycle||null,
+          current:result.current||null,
+          forecast:(result.forecast||[]).map(x=>({
+            h:x.horizon_sim_hours,cm:x.level_cm,model:x.method,
+            mae_cm:x.backtest_mae_cm,samples:x.backtest_samples,validated:x.validated
+          }))
+        }));
+      } catch (err) { console.error("[TIDE FORECAST AUDIT]",err.message); }
+    }, 15000);
   } catch (error) {
     console.error("[DB v2] Startup failed:", error.message);
     process.exit(1);
