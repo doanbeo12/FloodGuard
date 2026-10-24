@@ -12,6 +12,9 @@ function pct(a,p) { const v=a.filter(Number.isFinite).slice().sort((x,y)=>x-y); 
 
 const DB = safeDb(process.env.V2_DB_NAME || "floodguard_v2");
 const DEF_HOURS = clamp(Number(process.env.TIDE_HISTORY_HOURS || 12), 6, 18);
+const HORIZONS=[1,2,3,6,9];
+const MODELS=["PERSISTENCE","DAMPED_TREND","SEASONAL_HISTORY","ANALOG_PATTERN"];
+const CM_BOUNDS={min:0,max:16};
 const DEF_RECENT = clamp(Number(process.env.TIDE_RECENT_MINUTES || 10), 5, 15);
 const DEF_SCALE = Math.max(1, Number(process.env.TIDE_SIM_TIME_SCALE || 60));
 const STEP_SEC = Math.max(5, Number(process.env.TIDE_PREDICTOR_SAMPLE_SECONDS || 10));
@@ -128,6 +131,119 @@ function confidence(spanHours,period,cycles,spreads,range) {
   return clamp(0.2*h+0.35*p+0.25*c+0.2*v,0.05,0.98);
 }
 
+
+function valid(v){return Number.isFinite(v);}
+function trueRecent(values,index,count=4){
+  if(index<0||!valid(values[index]))return false;
+  let good=0;
+  for(let j=Math.max(0,index-count+1);j<=index;j++)if(valid(values[j]))good++;
+  return good>=Math.min(2,count);
+}
+function localTrend(values,index,stepSec){
+  const begin=Math.max(0,index-Math.ceil(120/stepSec));
+  const pts=[];
+  for(let j=begin;j<=index;j++)if(valid(values[j]))pts.push({t:j*stepSec*1000,v:values[j]});
+  if(pts.length<4)return 0;
+  const s=regression(pts);
+  return clamp(s,-4,4);
+}
+function analogPrediction(values,index,hSteps,stepSec){
+  const window=Math.max(5,Math.round(60/stepSec));
+  if(index<window||!trueRecent(values,index,window))return null;
+  const present=values.slice(index-window+1,index+1);
+  if(present.filter(valid).length<window-1)return null;
+  const matches=[];
+  const low=Math.max(window, index-Math.round(6*3600/stepSec));
+  const high=index-hSteps-2;
+  for(let j=low;j<=high;j+=2){
+    if(!valid(values[j])||!valid(values[j+hSteps]))continue;
+    const prior=values.slice(j-window+1,j+1);
+    if(prior.filter(valid).length<window-1)continue;
+    let sq=0,count=0;
+    for(let k=0;k<window;k++){
+      if(!valid(prior[k])||!valid(present[k]))continue;
+      const err=(present[k]-present[window-1])-(prior[k]-prior[window-1]);
+      sq+=err*err;count++;
+    }
+    if(count<window-2)continue;
+    const shape=Math.sqrt(sq/count);
+    const levelPenalty=Math.abs(present[window-1]-prior[window-1])*0.1;
+    matches.push({score:shape+levelPenalty,delta:values[j+hSteps]-values[j]});
+  }
+  matches.sort((a,b)=>a.score-b.score);
+  if(matches.length<3)return null;
+  const best=matches.slice(0,Math.min(5,matches.length));
+  if(best[0].score>2.5)return null;
+  let wsum=0,total=0;
+  for(const m of best){const w=1/(0.15+m.score);total+=w*m.delta;wsum+=w;}
+  return clamp(values[index]+total/wsum,CM_BOUNDS.min,CM_BOUNDS.max);
+}
+function predictMethods(values,index,hSteps,stepSec,period){
+  const current=values[index];
+  const horizonMin=hSteps*stepSec/60;
+  const slope=localTrend(values,index,stepSec);
+  const output={
+    PERSISTENCE:current,
+    DAMPED_TREND:fallback(current,slope,horizonMin,CM_BOUNDS),
+    SEASONAL_HISTORY:null,
+    ANALOG_PATTERN:analogPrediction(values,index,hSteps,stepSec)
+  };
+  if(period){
+    const prediction=seasonal(values.slice(0,index+1),period.samples,hSteps);
+    if(prediction&&valid(prediction.value))output.SEASONAL_HISTORY=clamp(prediction.value,CM_BOUNDS.min,CM_BOUNDS.max);
+  }
+  return output;
+}
+function scoreModels(values,last,stepSec,scale){
+  const metrics={},origins={};
+  for(const h of HORIZONS){
+    const offset=Math.max(1,Math.round(h*3600/scale/stepSec));
+    const earliest=Math.max(Math.ceil(10*60/stepSec),Math.round((last+1)*0.3));
+    const latest=last-offset;
+    const originsForH=[];
+    if(latest>=earliest){
+      const stride=Math.max(1,Math.floor((latest-earliest)/23));
+      for(let i=earliest;i<=latest;i+=stride)if(trueRecent(values,i)&&valid(values[i+offset]))originsForH.push(i);
+    }
+    const picked=originsForH.slice(-24);
+    const sums=Object.fromEntries(MODELS.map(m=>[m,{abs:0,sq:0,n:0}]));
+    // No future timestamps/measurements are given to any candidate at each origin.
+    for(const origin of picked){
+      const training=values.slice(0,origin+1);
+      const learned=estimatePeriod(training);
+      const predictions=predictMethods(training,origin,offset,stepSec,learned);
+      const truth=values[origin+offset];
+      for(const name of MODELS){
+        const p=predictions[name];
+        if(!valid(p))continue;
+        const e=p-truth;
+        sums[name].abs+=Math.abs(e);sums[name].sq+=e*e;sums[name].n++;
+      }
+    }
+    const methods={};
+    for(const name of MODELS){
+      const x=sums[name];
+      methods[name]={samples:x.n,mae_cm:x.n?Number((x.abs/x.n).toFixed(3)):null,rmse_cm:x.n?Number(Math.sqrt(x.sq/x.n).toFixed(3)):null};
+    }
+    metrics[h]=methods;
+    origins[h]=picked.length;
+  }
+  return {metrics,origins};
+}
+function choosePrediction(predictions,metrics){
+  const ranked=MODELS.filter(m=>valid(predictions[m])&&(metrics[m]?.samples||0)>=6)
+    .sort((a,b)=>metrics[a].mae_cm-metrics[b].mae_cm);
+  if(ranked.length){
+    const best=ranked[0];
+    // Prefer one validated model; avoid unjustified averaging.
+    return {method:best,value:predictions[best],mae:metrics[best].mae_cm,samples:metrics[best].samples,validated:true};
+  }
+  for(const m of ["SEASONAL_HISTORY","ANALOG_PATTERN","DAMPED_TREND","PERSISTENCE"]){
+    if(valid(predictions[m]))return {method:m,value:predictions[m],mae:null,samples:0,validated:false};
+  }
+  return null;
+}
+
 async function loadHistory(hours) {
   const from=new Date(Date.now()-hours*3600000);
   const [rows]=await pool.execute(
@@ -154,6 +270,7 @@ async function buildTideForecast(options={}) {
 
   const current=values[last];
   const currentMs=grid.start+last*STEP_SEC*1000;
+  if(Date.now()-currentMs>30000)return {available:false,reason:"STALE_TIDE_SAMPLE",message:"Mau JSN hop le cuoi cung qua 30 giay; khong du bao thoi gian thuc."};
   const spanHours=(points[points.length-1].t-points[0].t)/3600000;
   const recentFrom=currentMs-recent*60000;
   const slope=regression(points.filter(p=>p.t>=recentFrom&&p.t<=currentMs));
@@ -163,14 +280,25 @@ async function buildTideForecast(options={}) {
   const bounds={min:clamp(p05-0.5,MIN_LEVEL,MAX_LEVEL),max:clamp(p95+0.5,MIN_LEVEL,MAX_LEVEL)};
   if(bounds.max<=bounds.min){bounds.min=MIN_LEVEL;bounds.max=MAX_LEVEL;}
 
+  const training=used;
+  const backtest=scoreModels(training,training.length-1,STEP_SEC,scale);
   const spreads=[];
-  const forecast=[1,2,3].map(h=>{
+  const forecast=HORIZONS.map(h=>{
     const realSec=h*3600/scale;
     const hs=Math.max(1,Math.round(realSec/STEP_SEC));
-    let value=null,method="DAMPED_LINEAR_FALLBACK",matches=0,spread=null;
-    if(period){const s=seasonal(used,period.samples,hs);if(s){value=clamp(s.value,bounds.min,bounds.max);method="SEASONAL_HISTORY";matches=s.matches;spread=s.spread;if(Number.isFinite(spread))spreads.push(spread);}}
-    if(!Number.isFinite(value))value=fallback(current,slope,realSec/60,bounds);
-    return {horizon_sim_hours:h,horizon_real_seconds:Math.round(realSec),level_cm:Number(value.toFixed(2)),method,historical_matches:matches,historical_spread_cm:Number.isFinite(spread)?Number(spread.toFixed(2)):null};
+    const predictions=predictMethods(training,training.length-1,hs,STEP_SEC,period);
+    const selected=choosePrediction(predictions,backtest.metrics[h]);
+    if(!selected)return {horizon_sim_hours:h,horizon_real_seconds:Math.round(realSec),level_cm:null,method:"UNAVAILABLE",backtest_mae_cm:null,backtest_samples:0};
+    const levels=Object.fromEntries(MODELS.map(name=>[name,Number.isFinite(predictions[name])?Number(predictions[name].toFixed(2)):null]));
+    const uncertainty=selected.mae!=null?Number((1.5*selected.mae).toFixed(2)):null;
+    if(selected.mae!=null)spreads.push(selected.mae);
+    return {
+      horizon_sim_hours:h,horizon_real_seconds:Math.round(realSec),
+      level_cm:Number(selected.value.toFixed(2)),method:selected.method,
+      historical_matches:0,historical_spread_cm:uncertainty,
+      backtest_mae_cm:selected.mae,backtest_samples:selected.samples,validated:selected.validated,
+      method_predictions_cm:levels
+    };
   });
 
   let nextPeak=null,nextLow=null,cycles=0;
@@ -187,13 +315,14 @@ async function buildTideForecast(options={}) {
   const range=Math.max(0.1,p95-p05);
   const conf=confidence(spanHours,period,cycles,spreads,range);
   return {
-    available:true,model:"SENSOR_ONLY_SEASONAL_V2",training_status:spanHours>=6?"TRAINED":"WARMING_UP",generated_at:new Date().toISOString(),
+    available:true,model:"SENSOR_ONLY_ROLLING_BACKTEST_V3",training_status:backtest.origins[9]>=6?"VALIDATED":"WARMING_UP",generated_at:new Date().toISOString(),
     current:{recorded_at:new Date(currentMs).toISOString(),tide_level_cm:Number(current.toFixed(2)),trend:labelTrend(slope),slope_cm_per_real_min:Number(slope.toFixed(4)),slope_cm_per_sim_hour:Number((slope*60/scale).toFixed(3))},
     time_model:{simulation_scale:scale,one_sim_hour_real_seconds:Number((3600/scale).toFixed(2))},
     history:{requested_hours:hours,span_hours:Number(spanHours.toFixed(2)),raw_points:points.length,sample_seconds:STEP_SEC,recent_window_minutes:recent},
     learned_cycle:period?{period_real_seconds:period.seconds,period_sim_hours:Number((period.seconds*scale/3600).toFixed(2)),correlation:Number(period.correlation.toFixed(3)),approximate_cycles_in_history:cycles}:null,
-    forecast,next_peak:nextPeak,next_low:nextLow,confidence:Number(conf.toFixed(3)),confidence_label:conf>=0.75?"HIGH":conf>=0.5?"MEDIUM":"LOW",
-    predictor_rules:{input_fields:["recorded_at","tide_level_cm"],excluded_fields:["scenario","pump_in","pump_out","phase"],note:"Pump/scenario are stored only for evaluation and are never used by the forecast model."}
+    forecast,backtest:{method:"ROLLING_ORIGIN_NO_LOOKAHEAD",metric:"MAE_CM",by_horizon:backtest.metrics,origin_counts:backtest.origins},
+    next_peak:nextPeak,next_low:nextLow,confidence:Number(conf.toFixed(3)),confidence_label:conf>=0.75?"HIGH":conf>=0.5?"MEDIUM":"LOW",
+    predictor_rules:{input_fields:["recorded_at","tide_level_cm"],excluded_fields:["scenario","pump_in","pump_out","phase"],note:"Only historical JSN readings are inputs; model choice uses rolling-origin backtesting without future leakage."}
   };
 }
 
