@@ -205,7 +205,7 @@ function scoreModels(values,last,stepSec,scale){
       const stride=Math.max(1,Math.floor((latest-earliest)/23));
       for(let i=earliest;i<=latest;i+=stride)if(trueRecent(values,i)&&valid(values[i+offset]))originsForH.push(i);
     }
-    const picked=originsForH.slice(-24);
+    const picked=originsForH.slice(-8);
     const sums=Object.fromEntries(MODELS.map(m=>[m,{abs:0,sq:0,n:0}]));
     // No future timestamps/measurements are given to any candidate at each origin.
     for(const origin of picked){
