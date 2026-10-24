@@ -189,7 +189,11 @@ function renderForecast(d){
     el("tideNoData").classList.add("d-none");
     el("tideTrend").textContent=label[tide.current?.trend]||tide.current?.trend||"--";
     setBadge(el("tideConfidenceBadge"),"Tin cậy "+(label[tide.confidence_label]||tide.confidence_label||"--"),tide.confidence_label==="HIGH"?"NORMAL":tide.confidence_label==="MEDIUM"?"WATCH":"UNKNOWN");
-    el("tideForecastRows").innerHTML=(tide.forecast||[]).map(x=>'<div class="forecast-row"><span>'+x.horizon_sim_hours+' giờ</span><strong>'+fmt(x.level_cm)+' cm</strong><em>'+((x.method==="SEASONAL_HISTORY")?"Theo chu kỳ":"Theo xu hướng")+'</em></div>').join("") || '<div class="empty-note">Chưa có điểm dự báo.</div>';
+    const tideMethods={PERSISTENCE:"Giữ nguyên",DAMPED_TREND:"Xu hướng giảm dần",SEASONAL_HISTORY:"Chu kỳ lịch sử",ANALOG_PATTERN:"Mẫu tương tự"};
+    el("tideForecastRows").innerHTML=(tide.forecast||[]).map(x=>{
+      const detail=x.validated&&x.backtest_mae_cm!=null?" • MAE "+fmt(x.backtest_mae_cm,2)+" cm ("+x.backtest_samples+" mẫu kiểm định)":" • Chưa đủ mẫu kiểm định";
+      return '<div class="forecast-row"><span>'+x.horizon_sim_hours+' giờ</span><strong>'+fmt(x.level_cm)+' cm</strong><em>'+(tideMethods[x.method]||x.method||"--")+detail+'</em></div>';
+    }).join("") || '<div class="empty-note">Chưa có điểm dự báo.</div>';
     const cyc=tide.learned_cycle;
     el("tideCycleInfo").textContent=cyc?"Chu kỳ học được: khoảng "+fmt(cyc.period_sim_hours,2)+" giờ mô phỏng • "+cyc.approximate_cycles_in_history+" chu kỳ":"Chưa nhận dạng được chu kỳ rõ.";
   }else{
