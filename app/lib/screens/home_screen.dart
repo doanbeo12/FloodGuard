@@ -58,7 +58,8 @@ class _HomeScreenState extends State<HomeScreen> {
     if (v == null) return false;
     final dt = DateTime.tryParse(v.toString())?.toUtc();
     if (dt == null) return false;
-    return DateTime.now().toUtc().difference(dt).inSeconds.abs() <= seconds;
+    final age = DateTime.now().toUtc().difference(dt).inSeconds;
+    return age >= -5 && age <= seconds;
   }
 
   bool fresh(dynamic v) => freshWithin(v, 30);
@@ -175,7 +176,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
     setState(() {
       if (latestResult != null) latest = latestResult;
-      if (forecastResult != null) forecast = forecastResult;
+      forecast = forecastResult ?? <String, dynamic>{};
       loading = false;
 
       if (latestResult != null || latest.isNotEmpty) {
@@ -199,7 +200,7 @@ class _HomeScreenState extends State<HomeScreen> {
       case 'DANGER':
         return 'Nguy hiểm';
       default:
-        return code.isEmpty ? '--' : code;
+        return code == 'UNKNOWN' ? 'Chờ dữ liệu' : (code.isEmpty ? '--' : code);
     }
   }
 
@@ -377,7 +378,9 @@ class _HomeScreenState extends State<HomeScreen> {
       collector['node2LastReceivedAt'] ?? node2['recorded_at'],
     );
     final centralFresh = centralOnline(n1Fresh, n2Fresh);
-    final alert = flood['overall_alert_level']?.toString() ?? 'NORMAL';
+    final alert = flood['available'] == true
+        ? (flood['overall_alert_level']?.toString() ?? 'NORMAL')
+        : 'UNKNOWN';
 
     return ListView(
       physics: const AlwaysScrollableScrollPhysics(),
