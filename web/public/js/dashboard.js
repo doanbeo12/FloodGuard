@@ -207,19 +207,22 @@ function renderForecast(d){
     const cur=flood.current||{};
     el("roadTrend").textContent=(label[cur.road_trend]||cur.road_trend||"--")+" • "+fmt(cur.road_slope_cm_per_real_min,3)+" cm/phút";
     el("floodForecastRows").innerHTML=(flood.forecast||[]).map(x=>'<div class="forecast-row"><span>'+x.horizon_sim_hours+' giờ</span><strong>'+fmt(x.road_level_cm)+' cm</strong><em>'+(label[x.alert_level]||x.alert_level)+'</em></div>').join("");
-    const cause=flood.predicted_cause?.label || "--";
+    const rawCause=flood.predicted_cause?.label;
+    const cause=(lvl==="NORMAL" || !rawCause || /^(không rõ|không xác định|chưa xác định|unknown|none|normal)$/i.test(String(rawCause).trim()))?"--":rawCause;
     const wc=el("warningCard"); wc.className="dashboard-card warning-card "+(lvl==="WATCH"?"watch":lvl==="WARNING"?"warning":lvl==="DANGER"?"danger":"normal");
     setBadge(el("floodTopBadge"),label[lvl]||lvl,lvl);
     el("warningLevel").textContent=label[lvl]||lvl;
     el("warningCause").textContent="Nguyên nhân: "+cause;
-    el("warningConfidence").textContent="Tin cậy: "+(label[flood.confidence_label]||flood.confidence_label||"--")+" ("+fmt((num(flood.confidence)||0)*100,0)+"%)";
+    el("warningConfidence").style.display="none";
     const wh=flood.warning_horizon;
     if(flood.early_warning && wh){
+      el("warningMessage").style.display="";
       el("warningMessage").textContent="Cảnh báo sớm: dự báo mực nước đường có thể đạt "+fmt(wh.predicted_road_level_cm)+" cm sau khoảng "+wh.sim_hours+" giờ mô phỏng.";
       el("earlyWarningText").textContent="Cảnh báo sớm đang hoạt động • Nguyên nhân dự kiến: "+cause;
       el("earlyWarningText").classList.add("active");
     }else{
-      el("warningMessage").textContent="Chưa phát hiện nguy cơ vượt ngưỡng cảnh báo trong 3 giờ mô phỏng tới.";
+      el("warningMessage").textContent="";
+      el("warningMessage").style.display="none";
       el("earlyWarningText").textContent="Cảnh báo sớm: chưa kích hoạt • Nguyên nhân dự kiến: "+cause;
       el("earlyWarningText").classList.remove("active");
     }
@@ -233,9 +236,10 @@ function renderForecast(d){
     el("warningCard").className="dashboard-card warning-card normal";
     el("warningLevel").textContent="CHỜ DỮ LIỆU";
     el("warningCause").textContent="Nguyên nhân: --";
-    el("warningConfidence").textContent="Tin cậy: --";
+    el("warningConfidence").style.display="none";
     el("earlyWarningText").textContent="Cảnh báo sớm: tạm dừng do thiếu dữ liệu trực tiếp.";
     el("earlyWarningText").classList.remove("active");
+    el("warningMessage").style.display="";
     el("warningMessage").textContent=flood.message||"Chưa đủ dữ liệu để dự báo ngập.";
   }
 }
