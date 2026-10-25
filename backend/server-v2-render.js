@@ -131,8 +131,8 @@ async function start() {
       String(process.env.MQTT_V2_ENABLED ?? "true").toLowerCase() !== "false";
 
     if (mqttEnabled) startMqttCollectorV2();
-    startJournal();
     else console.log("[MQTT v2] Collector disabled");
+    startJournal();
   });
 }
 
