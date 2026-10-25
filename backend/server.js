@@ -737,6 +737,12 @@ app.listen(PORT, async () => {
         console.log("[MQTT v2] Collector disabled by MQTT_V2_ENABLED=false");
     }
 
+    // Separate history watcher; disabled until MySQL history schema has been verified.
+    if (String(process.env.DEVICE_HISTORY_ENABLED || "false").toLowerCase() === "true") {
+        require("./connection-history-v2").startConnectionHistoryV2()
+          .catch(error => console.error("[DEVICE HISTORY]", error.message));
+    }
+
     startTideScheduler();
 });
 
