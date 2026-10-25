@@ -40,6 +40,29 @@ async function initialize(){
   for(const sql of statements)await query(sql);
   const devices=[["NODE1","Trạm mưa và ngập đường"],["NODE2","Trạm triều"],["CENTRAL","Trạm trung tâm"]];
   for(const [code,name] of devices)await query('INSERT INTO '+tbl("devices")+' (device_code,device_name,device_type) VALUES (?,?,?) ON CONFLICT (device_code) DO NOTHING',[code,name,"ESP32"]);
+  const sensors=[
+   ["NODE1","N1_AHT20","AHT20","TEMPERATURE_HUMIDITY"],
+   ["NODE1","N1_BMP180","BMP180","PRESSURE"],
+   ["NODE1","N1_HALL","Hall - cốc gió","WIND_ROTATION"],
+   ["NODE1","N1_BUCKET","Gàu lật","RAIN_VOLUME"],
+   ["NODE1","N1_RAIN","Cảm biến mưa","RAIN_DETECTION"],
+   ["NODE1","N1_JSN","JSN-SR04T đường","ROAD_WATER_LEVEL"],
+   ["NODE2","N2_JSN","JSN-SR04T triều","TIDE_WATER_LEVEL"]
+  ];
+  for(const [dev,code,name,type] of sensors)
+   await query('INSERT INTO '+tbl("sensors")+' (device_id,sensor_code,sensor_name,sensor_type) SELECT device_id,?,?,? FROM '+tbl("devices")+' WHERE device_code=? ON CONFLICT (sensor_code) DO NOTHING',[code,name,type,dev]);
+  const channels=[
+   ["N1_AHT20","N1_TEMPERATURE","rain_node_readings","temperature_c","C"],
+   ["N1_AHT20","N1_HUMIDITY","rain_node_readings","humidity_pct","%"],
+   ["N1_BMP180","N1_PRESSURE","rain_node_readings","pressure_hpa","hPa"],
+   ["N1_HALL","N1_WIND_RPM","rain_node_readings","wind_rpm","RPM"],
+   ["N1_BUCKET","N1_RAIN_TIPS","rain_node_readings","rain_tips_total","tips"],
+   ["N1_RAIN","N1_RAIN_DETECTED","rain_node_readings","rain_detected","0/1"],
+   ["N1_JSN","N1_WATER_LEVEL","rain_node_readings","water_level_cm","cm"],
+   ["N2_JSN","N2_TIDE_LEVEL","tide_node_readings","tide_level_cm","cm"]
+  ];
+  for(const [sensor,code,source,col,unit] of channels)
+   await query('INSERT INTO '+tbl("sensor_channels")+' (sensor_id,channel_code,source_table,source_column,unit) SELECT sensor_id,?,?,?,? FROM '+tbl("sensors")+' WHERE sensor_code=? ON CONFLICT (channel_code) DO NOTHING',[code,source,col,unit,sensor]);
  } 
  const [r]=await query('SELECT device_id,device_code FROM '+tbl("devices"));
  if(!r.length)throw new Error("devices is empty: run the FloodGuard SQL seed first");
@@ -56,7 +79,7 @@ async function saveEvent(code,event,message){
 async function trackDevices(){
  const statuses=currentStatus();
  for(const [code,status] of Object.entries(statuses)){
-  if(previous[code]===undefined){previous[code]=status;continue;} // No fake transitions at boot
+  if(previous[code]===undefined){previous[code]=status;try{await saveEvent(code,"DEVICE_SNAPSHOT","Trạng thái ban đầu: "+status);}catch(e){console.warn("[Device journal]",e.message);}continue;}
   if(previous[code]===status)continue;
   const old=previous[code];previous[code]=status;
   try {await saveEvent(code,"DEVICE_"+status,old+" → "+status);}catch(e){console.warn("[Device journal]",e.message);}
@@ -104,7 +127,7 @@ async function cycle(){
 }
 async function deviceHistory(limit=30){
  const n=Math.max(1,Math.min(200,Number(limit)||30));
- const [rows]=await query('SELECT h.history_id,h.event_type,h.event_message,h.occurred_at,d.device_code,d.device_name FROM '+tbl("system_history")+' h LEFT JOIN '+tbl("devices")+' d ON h.device_id=d.device_id WHERE h.event_type IN (\'DEVICE_ONLINE\',\'DEVICE_OFFLINE\') ORDER BY h.occurred_at DESC,h.history_id DESC LIMIT '+n);
+ const [rows]=await query('SELECT h.history_id,h.event_type,h.event_message,h.occurred_at,d.device_code,d.device_name FROM '+tbl("system_history")+' h LEFT JOIN '+tbl("devices")+' d ON h.device_id=d.device_id WHERE h.event_type IN (\'DEVICE_ONLINE\',\'DEVICE_OFFLINE\',\'DEVICE_SNAPSHOT\') ORDER BY h.occurred_at DESC,h.history_id DESC LIMIT '+n);
  return rows;
 }
 async function forecastHistory(limit=15){
