@@ -743,6 +743,11 @@ app.listen(PORT, async () => {
           .catch(error => console.error("[DEVICE HISTORY]", error.message));
     }
 
+    if (String(process.env.FORECAST_JOURNAL_ENABLED || "false").toLowerCase() === "true") {
+        require("./forecast-journal-v2").startForecastJournalV2()
+          .catch(error => console.error("[FORECAST JOURNAL]", error.message));
+    }
+
     startTideScheduler();
 });
 
