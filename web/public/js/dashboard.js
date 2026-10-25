@@ -287,6 +287,47 @@ async function refreshMain(){
     setBadge(el("apiBadge"),"Máy chủ: hoạt động • một phần dự báo lỗi","WARNING");
   }
 }
+function renderDeviceEvents(rows){
+  const root=el("deviceHistoryList");
+  if(!root) return;
+  root.replaceChildren();
+  if(!Array.isArray(rows)||!rows.length){
+    const info=document.createElement("div");
+    info.className="small text-muted";
+    info.textContent="Chưa ghi nhận lần kết nối hoặc mất kết nối nào.";
+    root.appendChild(info);
+    return;
+  }
+  for(const item of rows){
+    const online=String(item.event_type).toUpperCase()==="ONLINE";
+    const card=document.createElement("div");
+    card.className="py-2 border-bottom";
+    const head=document.createElement("div");
+    head.className="d-flex justify-content-between align-items-start gap-2";
+    const name=document.createElement("span");
+    name.className="small fw-semibold";
+    name.textContent=item.device_name || ("Thiết bị "+item.device_id);
+    const badge=document.createElement("span");
+    badge.className="badge "+(online?"bg-success":"bg-danger");
+    badge.textContent=online?"Đã kết nối":"Mất kết nối";
+    head.append(name,badge);
+    const time=document.createElement("div");
+    time.className="small text-muted mt-1";
+    time.textContent=item.occurred_at?new Date(item.occurred_at).toLocaleString("vi-VN",{timeZone:"Asia/Ho_Chi_Minh",hour12:false}):"--";
+    card.append(head,time);
+    root.appendChild(card);
+  }
+}
+async function refreshDeviceEvents(){
+  try{
+    const result=await getJson("/api/v2/device/history?limit=30");
+    renderDeviceEvents(result.data);
+  }catch(e){
+    console.error("device history",e);
+    const root=el("deviceHistoryList");
+    if(root) root.textContent="Không tải được lịch sử thiết bị.";
+  }
+}
 async function refreshHistory(){
   try{
     const [rain,tide]=await Promise.all([getJson("/api/v2/rain/history?hours=1&limit=1000"),getJson("/api/v2/tide/history?hours=1&limit=1000")]);
@@ -294,7 +335,7 @@ async function refreshHistory(){
   }catch(e){console.error("history",e);}
 }
 function tick(){el("clock").textContent=new Date().toLocaleTimeString("vi-VN",{hour12:false});}
-el("refreshBtn").addEventListener("click",()=>{refreshMain();refreshHistory();});
+el("refreshBtn").addEventListener("click",()=>{refreshMain();refreshHistory();refreshDeviceEvents();});
 if(el("rainDemoBtn")) el("rainDemoBtn").addEventListener("click",async()=>{
   const btn=el("rainDemoBtn");
   btn.disabled=true;
@@ -313,6 +354,7 @@ document.querySelectorAll(".dashboard-nav-link").forEach(a=>a.addEventListener("
   a.classList.add("active");
 }));
 tick();setInterval(tick,1000);
-refreshMain();refreshHistory();
+refreshMain();refreshHistory();refreshDeviceEvents();
 setInterval(refreshMain,5000);
 setInterval(refreshHistory,30000);
+setInterval(refreshDeviceEvents,30000);
