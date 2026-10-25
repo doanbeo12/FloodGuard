@@ -1,5 +1,6 @@
 const express = require("express");
 const { pool } = require("./db-v2");
+const { deviceHistory, forecastHistory } = require("./forecast-journal-v2");
 const { buildTideForecast } = require("./tide-predictor-v2");
 const { buildRainForecast } = require("./rain-predictor-v2");
 const { buildFloodForecast } = require("./flood-predictor-v2");
@@ -33,6 +34,15 @@ function unavailableForecast(label){
 
 function createV2Router(){
   const r=express.Router();
+
+  r.get("/history/devices",async(req,res)=>{
+    try { const data=await deviceHistory(req.query.limit); res.json({ok:true,count:data.length,data}); }
+    catch(e) { res.status(503).json({ok:false,error:"Device journal unavailable"}); }
+  });
+  r.get("/history/forecasts",async(req,res)=>{
+    try { const data=await forecastHistory(req.query.limit); res.json({ok:true,count:data.length,data}); }
+    catch(e) { res.status(503).json({ok:false,error:"Forecast journal unavailable"}); }
+  });
 
   r.get("/health",async(req,res)=>{
     try{
