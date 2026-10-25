@@ -464,9 +464,18 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
+  String warningCause(String alert) {
+    if (alert == 'NORMAL' || alert == 'UNKNOWN') return '--';
+    final raw = m(flood['predicted_cause'])['label']?.toString().trim() ?? '';
+    if (raw.isEmpty ||
+        ['không rõ', 'không xác định', 'chưa xác định', 'unknown', 'none']
+            .contains(raw.toLowerCase())) return '--';
+    return raw;
+  }
+
   Widget warningCard(String alert) {
     final color = levelColor(alert);
-    final cause = m(flood['predicted_cause'])['label']?.toString() ?? '--';
+    final cause = warningCause(alert);
     final horizon = m(flood['warning_horizon']);
     final early = flood['early_warning'] == true;
 
@@ -482,7 +491,7 @@ class _HomeScreenState extends State<HomeScreen> {
           (horizon['sim_hours']?.toString() ?? '--') +
           ' giờ mô phỏng.';
     } else {
-      message = 'Chưa dự báo vượt ngưỡng trong 3 giờ mô phỏng tới.';
+      message = '';
     }
 
     return Container(
@@ -518,11 +527,13 @@ class _HomeScreenState extends State<HomeScreen> {
                   ),
                 ),
                 const SizedBox(height: 5),
-                Text(
-                  message,
-                  style: const TextStyle(fontSize: 12, height: 1.4),
-                ),
-                const SizedBox(height: 7),
+                if (message.isNotEmpty) ...[
+                  Text(
+                    message,
+                    style: const TextStyle(fontSize: 12, height: 1.4),
+                  ),
+                  const SizedBox(height: 7),
+                ],
                 Text(
                   'Nguyên nhân dự kiến: ' + cause,
                   style: const TextStyle(
@@ -865,7 +876,6 @@ class _HomeScreenState extends State<HomeScreen> {
       );
     }
 
-    final current = m(tide['current']);
     final rows =
         tide['forecast'] is List ? List<dynamic>.from(tide['forecast']) : [];
 
@@ -875,27 +885,17 @@ class _HomeScreenState extends State<HomeScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          cardHeader(
+          const Text(
             'Dự báo triều',
-            tide['confidence_label']?.toString() ?? '--',
-            const Color(0xFF0F8B8D),
+            style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
           ),
           const SizedBox(height: 10),
-          statusRow(
-            'Hiện tại',
-            f(current['tide_level_cm']) +
-                ' cm • ' +
-                trendText(current['trend']?.toString() ?? ''),
-          ),
-          const Divider(),
           ...rows.map((raw) {
             final row = m(raw);
             return forecastRow(
               (row['horizon_sim_hours']?.toString() ?? '--') + ' giờ',
               f(row['level_cm']) + ' cm',
-              row['method'] == 'SEASONAL_HISTORY'
-                  ? 'Theo chu kỳ'
-                  : 'Theo xu hướng',
+              '',
             );
           }),
         ],
@@ -914,7 +914,7 @@ class _HomeScreenState extends State<HomeScreen> {
     final rows =
         flood['forecast'] is List ? List<dynamic>.from(flood['forecast']) : [];
     final alert = flood['overall_alert_level']?.toString() ?? 'NORMAL';
-    final cause = m(flood['predicted_cause'])['label']?.toString() ?? '--';
+    final cause = warningCause(alert);
 
     return Container(
       padding: const EdgeInsets.all(16),
@@ -939,10 +939,6 @@ class _HomeScreenState extends State<HomeScreen> {
             flood['early_warning'] == true
                 ? 'Đang hoạt động'
                 : 'Chưa kích hoạt',
-          ),
-          statusRow(
-            'Độ tin cậy',
-            flood['confidence_label']?.toString() ?? '--',
           ),
         ],
       ),
@@ -997,19 +993,21 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
           ),
           Text(value, style: const TextStyle(fontWeight: FontWeight.bold)),
-          const SizedBox(width: 10),
-          SizedBox(
-            width: 82,
-            child: Text(
-              state,
-              textAlign: TextAlign.right,
-              style: const TextStyle(
-                fontSize: 10,
-                color: Color(0xFF6B7280),
-                fontWeight: FontWeight.w600,
+          if (state.isNotEmpty) ...[
+            const SizedBox(width: 10),
+            SizedBox(
+              width: 82,
+              child: Text(
+                state,
+                textAlign: TextAlign.right,
+                style: const TextStyle(
+                  fontSize: 10,
+                  color: Color(0xFF6B7280),
+                  fontWeight: FontWeight.w600,
+                ),
               ),
             ),
-          ),
+          ],
         ],
       ),
     );
