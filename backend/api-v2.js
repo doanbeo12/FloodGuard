@@ -146,6 +146,22 @@ function createV2Router(){
     }catch(e){console.error("[API v2 flood forecast]",e);res.status(500).json({available:false,error:e.message});}
   });
 
+  // Recent connection events, newest first. Read-only endpoint for the Web history panel.
+  r.get("/device/history",async(req,res)=>{
+    try{
+      const limit=Math.round(clamp(req.query.limit,1,200,50));
+      const [rows]=await pool.execute(
+        "SELECT h.history_id,h.device_id,d.device_name,h.event_type,"+
+        "h.event_source,h.event_message,h.occurred_at "+
+        "FROM "+DB+".system_history h "+
+        "LEFT JOIN "+DB+".devices d ON d.device_id=h.device_id "+
+        "WHERE h.event_source='MQTT_V2_CONNECTION_MONITOR' "+
+        "ORDER BY h.occurred_at DESC,h.history_id DESC LIMIT "+limit
+      );
+      res.json({count:rows.length,data:rows});
+    }catch(e){res.status(500).json({error:e.message});}
+  });
+
   r.get("/demo/rain-favorable",(req,res)=>{
     res.json({ok:true,rain_favorable:getRainFavorableDemo()});
   });
