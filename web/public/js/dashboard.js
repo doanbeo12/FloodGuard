@@ -287,6 +287,45 @@ async function refreshMain(){
     setBadge(el("apiBadge"),"Máy chủ: hoạt động • một phần dự báo lỗi","WARNING");
   }
 }
+function renderDeviceJournal(rows){
+ const target=el("deviceHistoryList");if(!target)return;
+ if(!rows.length){target.textContent="Chưa ghi nhận lần chuyển trạng thái nào.";return;}
+ target.replaceChildren();
+ for(const row of rows){
+  const item=document.createElement("div");
+  item.className="py-2 border-bottom";
+  const date=new Date(row.occurred_at).toLocaleString("vi-VN");
+  const state=row.event_type==="DEVICE_ONLINE"?"Trực tuyến":"Mất kết nối";
+  const badge=document.createElement("span");
+  badge.className="badge "+(row.event_type==="DEVICE_ONLINE"?"bg-success":"bg-danger");
+  badge.textContent=state;
+  const title=document.createElement("div");
+  title.textContent=(row.device_name||row.device_code||"Thiết bị")+" • "+date;
+  title.className="fw-semibold";
+  item.append(title,badge);target.append(item);
+ }
+}
+function renderForecastJournal(rows){
+ const target=el("forecastHistoryList");if(!target)return;
+ if(!rows.length){target.textContent="Chưa có lần dự báo được lưu.";return;}
+ target.replaceChildren();
+ for(const row of rows){
+  const item=document.createElement("div");item.className="py-2 border-bottom";
+  const time=new Date(row.generated_at).toLocaleString("vi-VN");
+  item.textContent="#"+row.run_id+" • "+time+" • "+[row.rain_available&&"Mưa",row.tide_available&&"Triều",row.flood_available&&"Ngập"].filter(Boolean).join(", ");
+  target.append(item);
+ }
+}
+async function refreshJournal(){
+ const results=await Promise.allSettled([
+  getJson("/api/v2/history/devices?limit=30"),
+  getJson("/api/v2/history/forecasts?limit=10")
+ ]);
+ if(results[0].status==="fulfilled")renderDeviceJournal(results[0].value.data||[]);
+ else if(el("deviceHistoryList"))el("deviceHistoryList").textContent="Chưa đọc được lịch sử thiết bị.";
+ if(results[1].status==="fulfilled")renderForecastJournal(results[1].value.data||[]);
+ else if(el("forecastHistoryList"))el("forecastHistoryList").textContent="Chưa đọc được lịch sử dự báo.";
+}
 async function refreshHistory(){
   try{
     const [rain,tide]=await Promise.all([getJson("/api/v2/rain/history?hours=1&limit=1000"),getJson("/api/v2/tide/history?hours=1&limit=1000")]);
@@ -294,7 +333,7 @@ async function refreshHistory(){
   }catch(e){console.error("history",e);}
 }
 function tick(){el("clock").textContent=new Date().toLocaleTimeString("vi-VN",{hour12:false});}
-el("refreshBtn").addEventListener("click",()=>{refreshMain();refreshHistory();});
+el("refreshBtn").addEventListener("click",()=>{refreshMain();refreshHistory();refreshJournal();});
 if(el("rainDemoBtn")) el("rainDemoBtn").addEventListener("click",async()=>{
   const btn=el("rainDemoBtn");
   btn.disabled=true;
@@ -313,6 +352,7 @@ document.querySelectorAll(".dashboard-nav-link").forEach(a=>a.addEventListener("
   a.classList.add("active");
 }));
 tick();setInterval(tick,1000);
-refreshMain();refreshHistory();
+refreshMain();refreshHistory();refreshJournal();
 setInterval(refreshMain,5000);
 setInterval(refreshHistory,30000);
+setInterval(refreshJournal,30000);
