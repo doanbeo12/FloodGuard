@@ -185,22 +185,19 @@ function renderForecast(d){
     ["temperatureTrend","humidityTrend","pressureTrend","dewTrend","windTrend"].forEach(id=>el(id).textContent="Xu hướng: --");
   }
 
+  // Tide forecast card displays only horizon and predicted water level.
+  ["tideConfidenceBadge","tideCycleInfo"].forEach(id=>{const node=el(id);if(node)node.style.display="none";});
   if(tide.available){
     el("tideNoData").classList.add("d-none");
     el("tideTrend").textContent=label[tide.current?.trend]||tide.current?.trend||"--";
-    setBadge(el("tideConfidenceBadge"),"Tin cậy "+(label[tide.confidence_label]||tide.confidence_label||"--"),tide.confidence_label==="HIGH"?"NORMAL":tide.confidence_label==="MEDIUM"?"WATCH":"UNKNOWN");
     el("tideForecastRows").innerHTML=(tide.forecast||[]).map(x=>
       '<div class="forecast-row"><span>'+x.horizon_sim_hours+' giờ</span><strong>'+fmt(x.level_cm)+' cm</strong></div>'
     ).join("") || '<div class="empty-note">Chưa có điểm dự báo.</div>';
-    const cyc=tide.learned_cycle;
-    el("tideCycleInfo").textContent=cyc?"Chu kỳ học được: khoảng "+fmt(cyc.period_sim_hours,2)+" giờ mô phỏng • "+cyc.approximate_cycles_in_history+" chu kỳ":"Chưa nhận dạng được chu kỳ rõ.";
   }else{
     el("tideNoData").classList.remove("d-none");
     el("tideNoData").textContent=tide.message||"Chưa đủ dữ liệu mực triều để dự báo.";
-    setBadge(el("tideConfidenceBadge"),"CHỜ DỮ LIỆU","UNKNOWN");
     el("tideTrend").textContent="--";
     el("tideForecastRows").innerHTML='<div class="empty-note">Tạm dừng dự báo triều.</div>';
-    el("tideCycleInfo").textContent="Chưa có dữ liệu trực tiếp để tiếp tục dự báo.";
   }
 
   if(flood.available){
