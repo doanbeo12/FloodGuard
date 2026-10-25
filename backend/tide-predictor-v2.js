@@ -265,6 +265,57 @@ async function loadHistory(hours) {
   return rows;
 }
 
+// Fixed historical learning session: 24 Oct 2026, 18:00–24:00 ICT (UTC+7).
+// Gaps are preserved by resample(); never concatenate stopped-node sessions.
+const HIST_FROM="2026-10-24T11:00:00.000Z";
+const HIST_TO="2026-10-24T17:00:00.000Z";
+let historicalCache={until:0,data:null};
+async function loadHistoricalNight(){
+  if(Date.now()<historicalCache.until)return historicalCache.data;
+  const [rows]=await pool.execute(
+    "SELECT recorded_at,tide_level_cm FROM "+DB+".tide_node_readings "+
+    "WHERE jsn_valid=1 AND tide_level_cm IS NOT NULL AND recorded_at>=? AND recorded_at<? ORDER BY recorded_at ASC,id ASC",
+    [new Date(HIST_FROM),new Date(HIST_TO)]
+  );
+  const points=normalize(rows);
+  const grid=points.length>=10?resample(points,STEP_SEC*1000):null;
+  const data=grid?{values:smooth(grid.values),points:points.length,period:estimatePeriod(smooth(grid.values))}:null;
+  historicalCache={until:Date.now()+60000,data};
+  return data;
+}
+
+// Compare the latest minute's *shape* against past sensor-only patterns,
+// then apply the future delta from historical matches to the live JSN level.
+function predictFromNight(history,live,hSteps){
+  if(!history||!live.length)return null;
+  const window=Math.max(5,Math.round(60/STEP_SEC));
+  const recent=live.slice(-window);
+  if(recent.length!==window||recent.filter(Number.isFinite).length<window-1)return null;
+  const values=history.values;
+  const candidates=[];
+  for(let j=window-1;j+hSteps<values.length;j+=2){
+    const prior=values.slice(j-window+1,j+1);
+    if(prior.some(v=>!Number.isFinite(v))||!Number.isFinite(values[j+hSteps]))continue;
+    // Do not bridge gaps in historical measurements.
+    const future=values.slice(j,j+hSteps+1);
+    if(future.some(v=>!Number.isFinite(v)))continue;
+    let sq=0;
+    for(let k=0;k<window;k++){
+      const delta=(recent[k]-recent[window-1])-(prior[k]-prior[window-1]);
+      sq+=delta*delta;
+    }
+    const shape=Math.sqrt(sq/window);
+    const levelPenalty=Math.abs(recent[window-1]-prior[window-1])*0.1;
+    candidates.push({score:shape+levelPenalty,delta:values[j+hSteps]-values[j]});
+  }
+  candidates.sort((a,b)=>a.score-b.score);
+  if(candidates.length<3||candidates[0].score>2.5)return null;
+  const best=candidates.slice(0,Math.min(5,candidates.length));
+  let wsum=0,weighted=0;
+  for(const c of best){const w=1/(0.15+c.score);wsum+=w;weighted+=w*c.delta;}
+  return {level:clamp(recent[window-1]+weighted/wsum,CM_BOUNDS.min,CM_BOUNDS.max),matches:best.length,score:best[0].score};
+}
+
 async function buildTideForecast(options={}) {
   const hours=clamp(Number(options.historyHours||DEF_HOURS),6,18);
   const recent=clamp(Number(options.recentMinutes||DEF_RECENT),5,15);
@@ -292,6 +343,9 @@ async function buildTideForecast(options={}) {
   const bounds={min:clamp(p05-0.5,MIN_LEVEL,MAX_LEVEL),max:clamp(p95+0.5,MIN_LEVEL,MAX_LEVEL)};
   if(bounds.max<=bounds.min){bounds.min=MIN_LEVEL;bounds.max=MAX_LEVEL;}
 
+  let historicalNight=null;
+  try { historicalNight=await loadHistoricalNight(); }
+  catch(e){console.warn('[TIDE 24OCT HISTORY]',e.message);}
   const training=used;
   const backtest=scoreModels(training,training.length-1,STEP_SEC,scale);
   const spreads=[];
@@ -299,15 +353,19 @@ async function buildTideForecast(options={}) {
     const realSec=h*3600/scale;
     const hs=Math.max(1,Math.round(realSec/STEP_SEC));
     const predictions=predictMethods(training,training.length-1,hs,STEP_SEC,period);
-    const selected=choosePrediction(predictions,backtest.metrics[h]);
+    const historical=predictFromNight(historicalNight,training,hs);
+    const selected=historical
+      ? {method:"HISTORICAL_ANALOG_24OCT",value:historical.level,mae:null,samples:0,validated:false}
+      : choosePrediction(predictions,backtest.metrics[h]);
     if(!selected)return {horizon_sim_hours:h,horizon_real_seconds:Math.round(realSec),level_cm:null,method:"UNAVAILABLE",backtest_mae_cm:null,backtest_samples:0};
     const levels=Object.fromEntries(MODELS.map(name=>[name,Number.isFinite(predictions[name])?Number(predictions[name].toFixed(2)):null]));
+    if(historical)levels.HISTORICAL_ANALOG_24OCT=Number(historical.level.toFixed(2));
     const uncertainty=selected.mae!=null?Number((1.5*selected.mae).toFixed(2)):null;
     if(selected.mae!=null)spreads.push(selected.mae);
     return {
       horizon_sim_hours:h,horizon_real_seconds:Math.round(realSec),
       level_cm:Number(selected.value.toFixed(2)),method:selected.method,
-      historical_matches:0,historical_spread_cm:uncertainty,
+      historical_matches:historical?.matches||0,historical_spread_cm:uncertainty,
       backtest_mae_cm:selected.mae,backtest_samples:selected.samples,validated:selected.validated,
       method_predictions_cm:levels
     };
@@ -324,6 +382,7 @@ async function buildTideForecast(options={}) {
     if(ni!=null){const sec=ni*STEP_SEC;nextLow={level_cm:Number(clamp(min,bounds.min,bounds.max).toFixed(2)),in_real_seconds:sec,in_sim_hours:Number((sec*scale/3600).toFixed(2))};}
   }
 
+  const nightPeriod=historicalNight?.period||null;
   const range=Math.max(0.1,p95-p05);
   const conf=confidence(spanHours,period,cycles,spreads,range);
   return {
@@ -331,7 +390,8 @@ async function buildTideForecast(options={}) {
     current:{recorded_at:new Date(currentMs).toISOString(),tide_level_cm:Number(current.toFixed(2)),trend:measuredTrend.trend,trend_source:"JSN_LAST_35_SECONDS",trend_valid_samples:measuredTrend.samples,trend_net_change_cm:measuredTrend.net_change_cm==null?null:Number(measuredTrend.net_change_cm.toFixed(3)),slope_cm_per_real_min:measuredTrend.slope==null?null:Number(measuredTrend.slope.toFixed(4)),slope_cm_per_sim_hour:measuredTrend.slope==null?null:Number((measuredTrend.slope*60/scale).toFixed(3))},
     time_model:{simulation_scale:scale,one_sim_hour_real_seconds:Number((3600/scale).toFixed(2))},
     history:{requested_hours:hours,span_hours:Number(spanHours.toFixed(2)),raw_points:points.length,sample_seconds:STEP_SEC,recent_window_minutes:recent},
-    learned_cycle:period?{period_real_seconds:period.seconds,period_sim_hours:Number((period.seconds*scale/3600).toFixed(2)),correlation:Number(period.correlation.toFixed(3)),approximate_cycles_in_history:cycles}:null,
+    historical_training:{source:'DB_JSN_24_OCT_NIGHT_2026',start_utc:HIST_FROM,end_utc:HIST_TO,raw_points:historicalNight?.points||0,learned_period_sim_hours:nightPeriod?Number((nightPeriod.seconds*scale/3600).toFixed(2)):null,used_forecasts:forecast.filter(x=>x.method==='HISTORICAL_ANALOG_24OCT').length},
+    learned_cycle:(nightPeriod||period)?{period_real_seconds:(nightPeriod||period).seconds,period_sim_hours:Number(((nightPeriod||period).seconds*scale/3600).toFixed(2)),correlation:Number((nightPeriod||period).correlation.toFixed(3)),approximate_cycles_in_history:nightPeriod?Math.floor((historicalNight.values.filter(Number.isFinite).length)/nightPeriod.samples):cycles,source:nightPeriod?'24_OCT_2026_NIGHT':'RECENT'}:null,
     forecast,backtest:{method:"ROLLING_ORIGIN_NO_LOOKAHEAD",metric:"MAE_CM",by_horizon:backtest.metrics,origin_counts:backtest.origins},
     next_peak:nextPeak,next_low:nextLow,confidence:Number(conf.toFixed(3)),confidence_label:conf>=0.75?"HIGH":conf>=0.5?"MEDIUM":"LOW",
     predictor_rules:{input_fields:["recorded_at","tide_level_cm"],excluded_fields:["scenario","pump_in","pump_out","phase"],note:"Only historical JSN readings are inputs; model choice uses rolling-origin backtesting without future leakage."}
