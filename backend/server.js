@@ -9,7 +9,6 @@ const { pool, checkDatabase } = require("./db");
 const { startMqttCollector } = require("./mqtt-collector");
 const { startMqttCollectorV2 } = require("./mqtt-collector-v2");
 const { createV2Router } = require("./api-v2");
-const { startJournal } = require("./forecast-journal-v2");
 const {
     refreshTideData,
     getHcmcTideSummary,
@@ -734,7 +733,6 @@ app.listen(PORT, async () => {
     const mqttV2Enabled = String(process.env.MQTT_V2_ENABLED ?? "true").toLowerCase() !== "false";
     if (mqttV2Enabled) {
         startMqttCollectorV2();
-    startJournal();
     } else {
         console.log("[MQTT v2] Collector disabled by MQTT_V2_ENABLED=false");
     }
