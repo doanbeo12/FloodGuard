@@ -15,7 +15,7 @@ const DB = safeDb(process.env.V2_DB_NAME || "floodguard_v2");
 const WINDOW_MIN = clamp(Number(process.env.RAIN_PREDICTOR_WINDOW_MINUTES || 15), 5, 60);
 const SCALE = Math.max(1, Number(process.env.FORECAST_SIM_TIME_SCALE || process.env.TIDE_SIM_TIME_SCALE || 60));
 const SAMPLE_SEC = Math.max(1, Number(process.env.DB_V2_SAMPLE_INTERVAL_MS || 5000) / 1000);
-const ACTIVE_LOOKBACK_SEC = Math.max(30, Number(process.env.RAIN_ACTIVE_LOOKBACK_SECONDS || 90));
+const ACTIVE_LOOKBACK_SEC = 10; // Confirm active rain only from the latest 10 seconds of sensor data.
 
 function regression(rows, field) {
   const pts = rows
