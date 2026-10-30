@@ -28,7 +28,7 @@ class ApiService {
   static Future<Map<String, dynamic>> _get(String path) async {
     final response = await http
         .get(Uri.parse(baseUrl + path))
-        .timeout(const Duration(seconds: 15));
+        .timeout(const Duration(seconds: 25));
 
     return _decodeResponse(response);
   }
@@ -43,7 +43,7 @@ class ApiService {
           headers: {'Content-Type': 'application/json'},
           body: jsonEncode(body),
         )
-        .timeout(const Duration(seconds: 15));
+        .timeout(const Duration(seconds: 25));
     return _decodeResponse(response);
   }
 
