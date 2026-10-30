@@ -150,43 +150,53 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> loadData() async {
+    // Prevent overlapping refresh requests from the periodic timer and pull-to-refresh.
     if (refreshing) return;
     refreshing = true;
 
-    Map<String, dynamic>? latestResult;
-    Map<String, dynamic>? forecastResult;
-    Object? latestError;
-
     try {
-      latestResult = await ApiService.getLatest();
+      // The forecast endpoint may be slow when the backend wakes up or MySQL
+      // reconnects. Do not block the current sensor readings on its response.
+      final results = await Future.wait<Object?>([
+        ApiService.getLatest().then<Object?>((value) => value)
+            .catchError((Object error) => error),
+        ApiService.getForecast().then<Object?>((value) => value)
+            .catchError((Object error) => error),
+      ]);
+
+      if (!mounted) return;
+
+      final latestResult = results[0] is Map<String, dynamic>
+          ? results[0] as Map<String, dynamic>
+          : null;
+      final forecastResult = results[1] is Map<String, dynamic>
+          ? results[1] as Map<String, dynamic>
+          : null;
+
+      setState(() {
+        if (latestResult != null) latest = latestResult;
+        if (forecastResult != null) forecast = forecastResult;
+        loading = false;
+
+        if (latestResult != null || latest.isNotEmpty) {
+          error = null;
+        } else {
+          error = 'Không tải được dữ liệu hiện tại. '
+              'Kiểm tra kết nối và thử làm mới. '
+              '${results[0]}';
+        }
+      });
     } catch (e) {
-      latestError = e;
-    }
-
-    try {
-      forecastResult = await ApiService.getForecast();
-    } catch (_) {
-      // Dữ liệu hiện tại vẫn được cập nhật khi phần dự báo tạm lỗi.
-    }
-
-    if (!mounted) {
+      if (!mounted) return;
+      setState(() {
+        loading = false;
+        if (latest.isEmpty) {
+          error = 'Không tải được dữ liệu: $e';
+        }
+      });
+    } finally {
       refreshing = false;
-      return;
     }
-
-    setState(() {
-      if (latestResult != null) latest = latestResult;
-      forecast = forecastResult ?? <String, dynamic>{};
-      loading = false;
-
-      if (latestResult != null || latest.isNotEmpty) {
-        error = null;
-      } else {
-        error = latestError?.toString() ?? 'Không lấy được dữ liệu hiện tại';
-      }
-    });
-
-    refreshing = false;
   }
 
   String alertText(String code) {
