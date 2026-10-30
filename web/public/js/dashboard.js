@@ -189,7 +189,7 @@ function renderForecast(d){
   ["tideConfidenceBadge","tideCycleInfo"].forEach(id=>{const node=el(id);if(node)node.style.display="none";});
   if(tide.available){
     el("tideNoData").classList.add("d-none");
-    el("tideTrend").textContent=label[tide.current?.trend]||tide.current?.trend||"--";
+    el("tideTrend").textContent=tide.current?.trend==="UNKNOWN"?"Chưa đủ dữ liệu":(label[tide.current?.trend]||tide.current?.trend||"--");
     el("tideForecastRows").innerHTML=(tide.forecast||[]).map(x=>
       '<div class="forecast-row"><span>'+x.horizon_sim_hours+' giờ</span><strong>'+fmt(x.level_cm)+' cm</strong></div>'
     ).join("") || '<div class="empty-note">Chưa có điểm dự báo.</div>';
