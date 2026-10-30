@@ -320,9 +320,9 @@ function predictFromNight(history,live,hSteps){
 // cycle-recognition model is warming up. Never forecast from stale/no JSN data.
 function warmupTideForecast(points, scale, reason) {
   const last=points[points.length-1];
-  if(!last || Date.now()-last.t>30000 || last.t>Date.now()+5000)return {
-    available:false, reason:"NO_FRESH_TIDE_SAMPLE",
-    message:"Không có mẫu triều hợp lệ trong 30 giây gần nhất."
+  if(!last)return {
+    available:false, reason:"NO_VALID_TIDE_HISTORY",
+    message:"Chưa có mẫu mực triều hợp lệ để dự báo."
   };
   const current=clamp(last.v,CM_BOUNDS.min,CM_BOUNDS.max);
   // A short sequence is not enough to safely infer tide direction or cycle.
@@ -334,6 +334,7 @@ function warmupTideForecast(points, scale, reason) {
     available:true,model:"SENSOR_ONLY_WARMUP_FALLBACK",
     training_status:"WARMING_UP",generated_at:new Date().toISOString(),
     reason,warning:"Ước tính sơ bộ; chưa đủ dữ liệu để nhận dạng chu kỳ và kiểm chứng sai số.",
+    stale_data:Date.now()-last.t>30000,latest_sample_at:new Date(last.t).toISOString(),
     current:{recorded_at:new Date(last.t).toISOString(),tide_level_cm:Number(current.toFixed(2)),trend:recentTrend.trend,
       trend_source:"JSN_RECENT_45_SECONDS",trend_valid_samples:recentTrend.samples},
     time_model:{simulation_scale:scale,one_sim_hour_real_seconds:Number((3600/scale).toFixed(2))},
@@ -368,7 +369,9 @@ async function buildTideForecast(options={}) {
 
   const current=values[last];
   const currentMs=grid.start+last*STEP_SEC*1000;
-  if(Date.now()-currentMs>30000)return {available:false,reason:"STALE_TIDE_SAMPLE",message:"Mau JSN hop le cuoi cung qua 30 giay; khong du bao thoi gian thuc."};
+  // This is a sensor-history simulation: old samples may support a forecast,
+  // but the UI must disclose that the latest observation is stale.
+  const staleData=Date.now()-currentMs>30000;
   const spanHours=(points[points.length-1].t-points[0].t)/3600000;
   const recentFrom=currentMs-recent*60000;
   const slope=regression(points.filter(p=>p.t>=recentFrom&&p.t<=currentMs));
@@ -422,7 +425,7 @@ async function buildTideForecast(options={}) {
   const range=Math.max(0.1,p95-p05);
   const conf=confidence(spanHours,period,cycles,spreads,range);
   return {
-    available:true,model:"SENSOR_ONLY_ROLLING_BACKTEST_V3",training_status:backtest.origins[9]>=6?"VALIDATED":"WARMING_UP",generated_at:new Date().toISOString(),
+    available:true,model:"SENSOR_ONLY_ROLLING_BACKTEST_V3",stale_data:staleData,latest_sample_at:new Date(currentMs).toISOString(),training_status:backtest.origins[9]>=6?"VALIDATED":"WARMING_UP",generated_at:new Date().toISOString(),
     current:{recorded_at:new Date(currentMs).toISOString(),tide_level_cm:Number(current.toFixed(2)),trend:measuredTrend.trend,trend_source:"JSN_LAST_45_SECONDS",trend_valid_samples:measuredTrend.samples,trend_net_change_cm:measuredTrend.net_change_cm==null?null:Number(measuredTrend.net_change_cm.toFixed(3)),slope_cm_per_real_min:measuredTrend.slope==null?null:Number(measuredTrend.slope.toFixed(4)),slope_cm_per_sim_hour:measuredTrend.slope==null?null:Number((measuredTrend.slope*60/scale).toFixed(3))},
     time_model:{simulation_scale:scale,one_sim_hour_real_seconds:Number((3600/scale).toFixed(2))},
     history:{requested_hours:hours,span_hours:Number(spanHours.toFixed(2)),raw_points:points.length,sample_seconds:STEP_SEC,recent_window_minutes:recent},
