@@ -190,7 +190,7 @@ function renderForecast(d){
   if(tide.available){
     el("tideNoData").classList.add("d-none");
     el("tideTrend").textContent=tide.current?.trend==="UNKNOWN"?"Chưa đủ dữ liệu":(label[tide.current?.trend]||tide.current?.trend||"--");
-    el("tideForecastRows").innerHTML=(tide.forecast||[]).filter(x=>x.horizon_sim_hours<=3).map(x=>
+    el("tideForecastRows").innerHTML=(tide.forecast||[]).filter(x=>[1,2,3,6,9].includes(Number(x.horizon_sim_hours))).map(x=>
       '<div class="forecast-row"><span>'+x.horizon_sim_hours+' giờ</span><strong>'+fmt(x.level_cm)+' cm</strong></div>'
     ).join("") + (tide.training_status==="WARMING_UP"
       ? '<div class="empty-note">Ước tính sơ bộ • Độ tin cậy thấp (đang thu thập dữ liệu chu kỳ)</div>' : '')
