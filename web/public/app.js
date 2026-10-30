@@ -232,8 +232,8 @@ async function refreshAll() {
 function resetTimers() {
   state.timers.forEach(clearInterval);
   state.timers = [
-    setInterval(refreshRealtime, 5000),
-    setInterval(refreshSlow, 15000),
+    setInterval(refreshRealtime, 10000),
+    setInterval(refreshSlow, 10000),
     setInterval(refreshWeather, 10 * 60 * 1000),
   ];
 }
