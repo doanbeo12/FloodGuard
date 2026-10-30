@@ -316,19 +316,56 @@ function predictFromNight(history,live,hSteps){
   return {level:clamp(recent[window-1]+weighted/wsum,CM_BOUNDS.min,CM_BOUNDS.max),matches:best.length,score:best[0].score};
 }
 
+// Startup fallback: give a clearly marked low-confidence forecast while the
+// cycle-recognition model is warming up. Never forecast from stale/no JSN data.
+function warmupTideForecast(points, scale, reason) {
+  const last=points[points.length-1];
+  if(!last || Date.now()-last.t>30000 || last.t>Date.now()+5000)return {
+    available:false, reason:"NO_FRESH_TIDE_SAMPLE",
+    message:"Không có mẫu triều hợp lệ trong 30 giây gần nhất."
+  };
+  const current=clamp(last.v,CM_BOUNDS.min,CM_BOUNDS.max);
+  // A short sequence is not enough to safely infer tide direction or cycle.
+  const recent=points.filter(p=>p.t>=last.t-90000);
+  const hasTrend=recent.length>=4 && recent[recent.length-1].t-recent[0].t>=15000;
+  const rawSlope=hasTrend?regression(recent):0;
+  const slope=clamp(rawSlope,-1,1);
+  const method=hasTrend?"WARMUP_DAMPED_TREND":"WARMUP_PERSISTENCE";
+  return {
+    available:true,model:"SENSOR_ONLY_WARMUP_FALLBACK",
+    training_status:"WARMING_UP",generated_at:new Date().toISOString(),
+    reason,warning:"Ước tính sơ bộ; chưa đủ dữ liệu để nhận dạng chu kỳ và kiểm chứng sai số.",
+    current:{recorded_at:new Date(last.t).toISOString(),tide_level_cm:Number(current.toFixed(2)),trend:hasTrend?(slope>0.02?"RISING":slope< -0.02?"FALLING":"STABLE"):"UNKNOWN",
+      trend_source:"SHORT_HISTORY",trend_valid_samples:recent.length},
+    time_model:{simulation_scale:scale,one_sim_hour_real_seconds:Number((3600/scale).toFixed(2))},
+    history:{raw_points:points.length},
+    forecast:HORIZONS.map(h=>{
+      const realSec=h*3600/scale;
+      const estimate=hasTrend?fallback(current,slope,realSec/60,CM_BOUNDS):current;
+      return {horizon_sim_hours:h,horizon_real_seconds:Math.round(realSec),
+        level_cm:Number(estimate.toFixed(2)),method,backtest_mae_cm:null,
+        backtest_samples:0,validated:false};
+    }),
+    confidence:0,confidence_label:"LOW",
+    learned_cycle:null,next_peak:null,next_low:null,
+    predictor_rules:{input_fields:["recorded_at","tide_level_cm"],
+      excluded_fields:["scenario","pump_in","pump_out","phase"]}
+  };
+}
+
 async function buildTideForecast(options={}) {
   const hours=clamp(Number(options.historyHours||DEF_HOURS),6,18);
   const recent=clamp(Number(options.recentMinutes||DEF_RECENT),5,15);
   const scale=Math.max(1,Number(options.simTimeScale||DEF_SCALE));
   const points=normalize(await loadHistory(hours));
 
-  if(points.length<6) return {available:false,reason:"NOT_ENOUGH_DATA",message:"Chua du du lieu muc trieu de du bao.",predictor_rules:{input_fields:["recorded_at","tide_level_cm"],excluded_fields:["scenario","pump_in","pump_out","phase"]}};
+  if(points.length<6) return warmupTideForecast(points,scale,"NOT_ENOUGH_DATA");
 
   const grid=resample(points,STEP_SEC*1000);
-  if(!grid||grid.values.length<6)return {available:false,reason:"RESAMPLE_FAILED"};
+  if(!grid||grid.values.length<6)return warmupTideForecast(points,scale,"RESAMPLE_FAILED");
   const values=smooth(grid.values);
   let last=values.length-1; while(last>=0&&!Number.isFinite(values[last]))last--;
-  if(last<1)return {available:false,reason:"NO_RECENT_VALID_LEVEL"};
+  if(last<1)return warmupTideForecast(points,scale,"NO_RECENT_VALID_LEVEL");
 
   const current=values[last];
   const currentMs=grid.start+last*STEP_SEC*1000;
@@ -387,7 +424,7 @@ async function buildTideForecast(options={}) {
   const conf=confidence(spanHours,period,cycles,spreads,range);
   return {
     available:true,model:"SENSOR_ONLY_ROLLING_BACKTEST_V3",training_status:backtest.origins[9]>=6?"VALIDATED":"WARMING_UP",generated_at:new Date().toISOString(),
-    current:{recorded_at:new Date(currentMs).toISOString(),tide_level_cm:Number(current.toFixed(2)),trend:measuredTrend.trend,trend_source:"JSN_LAST_35_SECONDS",trend_valid_samples:measuredTrend.samples,trend_net_change_cm:measuredTrend.net_change_cm==null?null:Number(measuredTrend.net_change_cm.toFixed(3)),slope_cm_per_real_min:measuredTrend.slope==null?null:Number(measuredTrend.slope.toFixed(4)),slope_cm_per_sim_hour:measuredTrend.slope==null?null:Number((measuredTrend.slope*60/scale).toFixed(3))},
+    current:{recorded_at:new Date(currentMs).toISOString(),tide_level_cm:Number(current.toFixed(2)),trend:measuredTrend.trend,trend_source:"JSN_LAST_90_SECONDS",trend_valid_samples:measuredTrend.samples,trend_net_change_cm:measuredTrend.net_change_cm==null?null:Number(measuredTrend.net_change_cm.toFixed(3)),slope_cm_per_real_min:measuredTrend.slope==null?null:Number(measuredTrend.slope.toFixed(4)),slope_cm_per_sim_hour:measuredTrend.slope==null?null:Number((measuredTrend.slope*60/scale).toFixed(3))},
     time_model:{simulation_scale:scale,one_sim_hour_real_seconds:Number((3600/scale).toFixed(2))},
     history:{requested_hours:hours,span_hours:Number(spanHours.toFixed(2)),raw_points:points.length,sample_seconds:STEP_SEC,recent_window_minutes:recent},
     historical_training:{source:'DB_JSN_24_OCT_NIGHT_2026',start_utc:HIST_FROM,end_utc:HIST_TO,raw_points:historicalNight?.points||0,learned_period_sim_hours:nightPeriod?Number((nightPeriod.seconds*scale/3600).toFixed(2)):null,used_forecasts:forecast.filter(x=>x.method==='HISTORICAL_ANALOG_24OCT').length},
