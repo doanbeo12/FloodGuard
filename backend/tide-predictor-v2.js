@@ -116,21 +116,21 @@ function fallback(current,slope,hRealMin,bounds) {
   return clamp(current+slope*hRealMin*damp,bounds.min,bounds.max);
 }
 
-// Display trend is intentionally independent from the longer forecast regression.
-// Use recent JSN samples from the last 90 seconds; 10-second storage and variable arrival gaps need a wider window.
+// Display the current *measured* direction independently of the historical
+// cycle/forecast model. Restrict it to the most recent samples so reversing the
+// pump does not leave a 90-second direction lag.
 function measuredTideTrend(points, atMs) {
-  const samples=points.filter(p=>p.t>=atMs-90000&&p.t<=atMs&&Number.isFinite(p.v));
-  if(samples.length<4)return {trend:"UNKNOWN",slope:null,net_change_cm:null,samples:samples.length};
-  const early=samples.slice(0,Math.min(3,Math.floor(samples.length/2)));
-  const late=samples.slice(-Math.min(3,Math.floor(samples.length/2)));
-  const t0=mean(early.map(p=>p.t)),t1=mean(late.map(p=>p.t));
-  const dt=(t1-t0)/60000;
-  if(dt<0.15)return {trend:"UNKNOWN",slope:null,net_change_cm:null,samples:samples.length};
-  const change=median(late.map(p=>p.v))-median(early.map(p=>p.v));
+  const recent=points.filter(p=>p.t>=atMs-45000&&p.t<=atMs&&Number.isFinite(p.v));
+  const samples=recent.slice(-4);
+  if(samples.length<2)return {trend:"UNKNOWN",slope:null,net_change_cm:null,samples:samples.length,window_seconds:45};
+  const first=samples[0],last=samples[samples.length-1];
+  const dt=(last.t-first.t)/60000;
+  if(dt<0.08)return {trend:"UNKNOWN",slope:null,net_change_cm:null,samples:samples.length,window_seconds:45};
+  // The first/last pair reacts to a reversal; 0.15 cm rejects ultrasonic jitter.
+  const change=last.v-first.v;
   const slope=change/dt;
-  // At least 0.15 cm net movement to avoid a false reversal from JSN noise.
   const trend=change>=0.15?"RISING":change<=-0.15?"FALLING":"STABLE";
-  return {trend,slope,net_change_cm:change,samples:samples.length,window_seconds:90};
+  return {trend,slope,net_change_cm:change,samples:samples.length,window_seconds:45};
 }
 
 function confidence(spanHours,period,cycles,spreads,range) {
@@ -326,17 +326,16 @@ function warmupTideForecast(points, scale, reason) {
   };
   const current=clamp(last.v,CM_BOUNDS.min,CM_BOUNDS.max);
   // A short sequence is not enough to safely infer tide direction or cycle.
-  const recent=points.filter(p=>p.t>=last.t-90000);
-  const hasTrend=recent.length>=4 && recent[recent.length-1].t-recent[0].t>=15000;
-  const rawSlope=hasTrend?regression(recent):0;
-  const slope=clamp(rawSlope,-1,1);
+  const recentTrend=measuredTideTrend(points,last.t);
+  const hasTrend=recentTrend.slope!=null;
+  const slope=clamp(recentTrend.slope??0,-1,1);
   const method=hasTrend?"WARMUP_DAMPED_TREND":"WARMUP_PERSISTENCE";
   return {
     available:true,model:"SENSOR_ONLY_WARMUP_FALLBACK",
     training_status:"WARMING_UP",generated_at:new Date().toISOString(),
     reason,warning:"Ước tính sơ bộ; chưa đủ dữ liệu để nhận dạng chu kỳ và kiểm chứng sai số.",
-    current:{recorded_at:new Date(last.t).toISOString(),tide_level_cm:Number(current.toFixed(2)),trend:hasTrend?(slope>0.02?"RISING":slope< -0.02?"FALLING":"STABLE"):"UNKNOWN",
-      trend_source:"SHORT_HISTORY",trend_valid_samples:recent.length},
+    current:{recorded_at:new Date(last.t).toISOString(),tide_level_cm:Number(current.toFixed(2)),trend:recentTrend.trend,
+      trend_source:"JSN_RECENT_45_SECONDS",trend_valid_samples:recentTrend.samples},
     time_model:{simulation_scale:scale,one_sim_hour_real_seconds:Number((3600/scale).toFixed(2))},
     history:{raw_points:points.length},
     forecast:HORIZONS.map(h=>{
@@ -424,7 +423,7 @@ async function buildTideForecast(options={}) {
   const conf=confidence(spanHours,period,cycles,spreads,range);
   return {
     available:true,model:"SENSOR_ONLY_ROLLING_BACKTEST_V3",training_status:backtest.origins[9]>=6?"VALIDATED":"WARMING_UP",generated_at:new Date().toISOString(),
-    current:{recorded_at:new Date(currentMs).toISOString(),tide_level_cm:Number(current.toFixed(2)),trend:measuredTrend.trend,trend_source:"JSN_LAST_90_SECONDS",trend_valid_samples:measuredTrend.samples,trend_net_change_cm:measuredTrend.net_change_cm==null?null:Number(measuredTrend.net_change_cm.toFixed(3)),slope_cm_per_real_min:measuredTrend.slope==null?null:Number(measuredTrend.slope.toFixed(4)),slope_cm_per_sim_hour:measuredTrend.slope==null?null:Number((measuredTrend.slope*60/scale).toFixed(3))},
+    current:{recorded_at:new Date(currentMs).toISOString(),tide_level_cm:Number(current.toFixed(2)),trend:measuredTrend.trend,trend_source:"JSN_LAST_45_SECONDS",trend_valid_samples:measuredTrend.samples,trend_net_change_cm:measuredTrend.net_change_cm==null?null:Number(measuredTrend.net_change_cm.toFixed(3)),slope_cm_per_real_min:measuredTrend.slope==null?null:Number(measuredTrend.slope.toFixed(4)),slope_cm_per_sim_hour:measuredTrend.slope==null?null:Number((measuredTrend.slope*60/scale).toFixed(3))},
     time_model:{simulation_scale:scale,one_sim_hour_real_seconds:Number((3600/scale).toFixed(2))},
     history:{requested_hours:hours,span_hours:Number(spanHours.toFixed(2)),raw_points:points.length,sample_seconds:STEP_SEC,recent_window_minutes:recent},
     historical_training:{source:'DB_JSN_24_OCT_NIGHT_2026',start_utc:HIST_FROM,end_utc:HIST_TO,raw_points:historicalNight?.points||0,learned_period_sim_hours:nightPeriod?Number((nightPeriod.seconds*scale/3600).toFixed(2)):null,used_forecasts:forecast.filter(x=>x.method==='HISTORICAL_ANALOG_24OCT').length},
