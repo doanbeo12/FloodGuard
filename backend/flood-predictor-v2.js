@@ -187,7 +187,7 @@ async function buildFloodForecast(options = {}) {
 
   const forecastBase = abnormal.suspected && Number.isFinite(abnormal.baseline_cm) ? abnormal.baseline_cm : current;
 
-  const forecast = [1, 2, 3].map(h => {
+  const forecast = [1, 2, 3, 6, 9].map(h => {
     const realMin = h * 60 / scale;
     const trendDamp = 1 / (1 + realMin / 4);
     const observedRainSlopePerMin = rainFlowModel.recent_flow_ml_s * rainFlowModel.response_cm_per_ml * 60;
@@ -233,8 +233,9 @@ async function buildFloodForecast(options = {}) {
 
   const currentAlert = abnormal.suspected && !rainRelevant && !tideRelevant ? "WATCH" : alertFromLevel(current);
   let overall = currentAlert;
-  for (const f of forecast) overall = maxAlert(overall, f.alert_level);
-  const firstWarning = forecast.find(f => ["WARNING", "DANGER"].includes(f.alert_level)) || null;
+  // Keep existing near-term warning behavior; 6h/9h are exploratory forecasts.
+  for (const f of forecast.filter(x => x.horizon_sim_hours <= 3)) overall = maxAlert(overall, f.alert_level);
+  const firstWarning = forecast.find(f => f.horizon_sim_hours <= 3 && ["WARNING", "DANGER"].includes(f.alert_level)) || null;
   const earlyWarning = current < WARNING_CM && Boolean(firstWarning);
   const cause = classifyCause({ rainRelevant, tideRelevant, abnormal: abnormal.suspected });
 
