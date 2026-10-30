@@ -193,7 +193,9 @@ function renderForecast(d){
     el("tideForecastRows").innerHTML=(tide.forecast||[]).filter(x=>x.horizon_sim_hours<=3).map(x=>
       '<div class="forecast-row"><span>'+x.horizon_sim_hours+' giờ</span><strong>'+fmt(x.level_cm)+' cm</strong></div>'
     ).join("") + (tide.training_status==="WARMING_UP"
-      ? '<div class="empty-note">Ước tính sơ bộ • Độ tin cậy thấp (đang thu thập dữ liệu chu kỳ)</div>' : '');
+      ? '<div class="empty-note">Ước tính sơ bộ • Độ tin cậy thấp (đang thu thập dữ liệu chu kỳ)</div>' : '')
+      + (tide.stale_data
+      ? '<div class="empty-note">Dự báo từ dữ liệu lịch sử • Chưa có mẫu triều mới</div>' : '');
   }else{
     el("tideNoData").classList.remove("d-none");
     el("tideNoData").textContent=tide.message||"Chưa đủ dữ liệu mực triều để dự báo.";
