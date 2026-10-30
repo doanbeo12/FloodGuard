@@ -10,7 +10,7 @@ require("dotenv").config();
 function safeDb(name){return /^[A-Za-z0-9_]+$/.test(String(name||""))?String(name):"floodguard_v2";}
 function clamp(v,a,b,fallback){const n=Number(v);return Number.isFinite(n)?Math.min(b,Math.max(a,n)):fallback;}
 const DB=safeDb(process.env.V2_DB_NAME||"floodguard_v2");
-const SAMPLE_SEC=Math.max(1,Number(process.env.DB_V2_SAMPLE_INTERVAL_MS||5000)/1000);
+const SAMPLE_SEC=Math.max(1,Number(process.env.DB_V2_SAMPLE_INTERVAL_MS||10000)/1000);
 const LIVE_TIMEOUT_MS=30000;
 
 function isFreshTimestamp(value){
