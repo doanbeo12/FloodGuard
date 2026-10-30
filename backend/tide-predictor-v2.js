@@ -117,9 +117,9 @@ function fallback(current,slope,hRealMin,bounds) {
 }
 
 // Display trend is intentionally independent from the longer forecast regression.
-// Use only fresh JSN samples from the last 35 seconds, not the last 10 minutes.
+// Use recent JSN samples from the last 90 seconds; 10-second storage and variable arrival gaps need a wider window.
 function measuredTideTrend(points, atMs) {
-  const samples=points.filter(p=>p.t>=atMs-35000&&p.t<=atMs&&Number.isFinite(p.v));
+  const samples=points.filter(p=>p.t>=atMs-90000&&p.t<=atMs&&Number.isFinite(p.v));
   if(samples.length<4)return {trend:"UNKNOWN",slope:null,net_change_cm:null,samples:samples.length};
   const early=samples.slice(0,Math.min(3,Math.floor(samples.length/2)));
   const late=samples.slice(-Math.min(3,Math.floor(samples.length/2)));
@@ -130,7 +130,7 @@ function measuredTideTrend(points, atMs) {
   const slope=change/dt;
   // At least 0.15 cm net movement to avoid a false reversal from JSN noise.
   const trend=change>=0.15?"RISING":change<=-0.15?"FALLING":"STABLE";
-  return {trend,slope,net_change_cm:change,samples:samples.length,window_seconds:35};
+  return {trend,slope,net_change_cm:change,samples:samples.length,window_seconds:90};
 }
 
 function confidence(spanHours,period,cycles,spreads,range) {
