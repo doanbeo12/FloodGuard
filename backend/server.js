@@ -713,7 +713,7 @@ app.get("/api/early-warning", async (req, res) => {
     }
 });
 
-app.listen(PORT, async () => {
+const httpServer = app.listen(PORT, async () => {
     console.log(`Flood Monitoring API ${API_VERSION}: http://localhost:${PORT}`);
     try {
         await checkDatabase();
@@ -750,5 +750,6 @@ app.listen(PORT, async () => {
 
     startTideScheduler();
 });
+require("./camera-relay").attachCameraRelay(httpServer);
 
 }
