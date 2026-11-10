@@ -5,16 +5,69 @@ No images are saved; AI will be integrated separately.
 """
 import os
 import time
-import ssl
+import socket
+from zeroconf import ServiceBrowser, ServiceListener, Zeroconf
 import cv2
 import websocket
 
-CAMERA_URL = os.getenv("CAMERA_URL", "http://192.168.102.9/stream")
+CAMERA_URL = os.getenv("CAMERA_URL", "")
+CAMERA_FALLBACK_URL = os.getenv("CAMERA_FALLBACK_URL", "")
+CAMERA_MDNS_NAME = os.getenv("CAMERA_MDNS_NAME", "floodguard-cam").removesuffix(".local")
 RELAY_URL = os.getenv("RELAY_URL", "wss://floodguard-backend-4dua.onrender.com/camera/uplink")
 STREAM_KEY = os.getenv("CAMERA_STREAM_KEY", "")
 FPS_LIMIT = max(1, min(10, float(os.getenv("CAMERA_RELAY_FPS", "4"))))
 JPEG_QUALITY = 65
 MAX_FRAME_BYTES = 180 * 1024
+
+
+class CameraListener(ServiceListener):
+    def __init__(self, zc):
+        self.url = None
+
+    def add_service(self, zc, service_type, name):
+        info = zc.get_service_info(service_type, name, timeout=1200)
+        if not info or (info.server or "").rstrip(".").lower() != (CAMERA_MDNS_NAME.lower() + ".local"):
+            return
+        for address in info.parsed_addresses():
+            try:
+                socket.inet_pton(socket.AF_INET, address)
+                self.url = f"http://{address}:{info.port}/stream"
+                break
+            except OSError:
+                pass
+
+    def update_service(self, zc, service_type, name):
+        self.add_service(zc, service_type, name)
+
+    def remove_service(self, zc, service_type, name):
+        pass
+
+
+def discover_camera_url():
+    if CAMERA_URL:
+        return CAMERA_URL
+    try:
+        address = socket.gethostbyname(CAMERA_MDNS_NAME + ".local")
+        return f"http://{address}/stream"
+    except OSError:
+        pass
+    try:
+        with Zeroconf() as zc:
+            listener = CameraListener(zc)
+            browser = ServiceBrowser(zc, "_http._tcp.local.", listener)
+            end = time.monotonic() + 6
+            while time.monotonic() < end and not listener.url:
+                time.sleep(0.15)
+            browser.cancel()
+            if listener.url:
+                return listener.url
+    except Exception as exc:
+        print("mDNS discovery error:", exc, flush=True)
+    if CAMERA_FALLBACK_URL:
+        print("Using configured fallback camera URL", flush=True)
+        return CAMERA_FALLBACK_URL
+    raise RuntimeError("Camera not found: check mDNS on ESP32 and local Wi-Fi connectivity")
+
 
 def run():
     if not STREAM_KEY:
@@ -23,8 +76,9 @@ def run():
         source = None
         ws = None
         try:
-            print("Opening local camera:", CAMERA_URL, flush=True)
-            source = cv2.VideoCapture(CAMERA_URL, cv2.CAP_FFMPEG)
+            stream_url = discover_camera_url()
+            print("Opening local camera:", stream_url, flush=True)
+            source = cv2.VideoCapture(stream_url, cv2.CAP_FFMPEG)
             if not source.isOpened():
                 raise RuntimeError("Cannot open ESP32 camera stream")
             ws = websocket.create_connection(
