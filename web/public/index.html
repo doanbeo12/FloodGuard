@@ -114,6 +114,18 @@
         </div>
       </section>
 
+      <section class="dashboard-box mt-4" id="cameraSection">
+        <div class="box-title d-flex align-items-center justify-content-between">
+          <span><i class="fa-solid fa-video"></i> Camera giám sát ngập</span>
+          <span id="cameraLiveBadge" class="status-pill muted">Camera ngoại tuyến</span>
+        </div>
+        <div class="camera-video-frame">
+          <img id="cameraLiveImage" alt="Video trực tiếp ESP32-S3-CAM" style="display:none" />
+          <div id="cameraOfflineText" class="camera-offline-note">Chưa nhận video từ laptop. Hãy chạy camera-relay.</div>
+        </div>
+        <div class="camera-video-footer">ESP32-S3-CAM • Video MJPEG chuyển tiếp từ laptop • <span id="cameraLastFrame">Chưa có khung hình</span></div>
+      </section>
+
       <section class="dashboard-box mt-4">
         <div class="box-title"><i class="fa-solid fa-cloud-sun"></i> Điều kiện môi trường tại trạm mưa và ngập đường</div>
         <div class="sensor-grid">
@@ -236,5 +248,6 @@
 </div>
 <script src="/config.js"></script>
 <script src="js/dashboard.js"></script>
+<script src="js/camera-view.js"></script>
 </body>
 </html>
