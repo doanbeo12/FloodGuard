@@ -95,3 +95,9 @@ body{margin:0;background:var(--page);color:var(--text);font-family:"Segoe UI",Ar
   .dashboard-header{padding:20px}.alert-detail-grid{grid-template-columns:1fr}.chart-container{height:300px}.threshold-legend{gap:10px;flex-direction:column}
   .sensor-grid{grid-template-columns:1fr}.sensor-metric{border-right:none;border-bottom:1px solid var(--border)}.forecast-hero{align-items:stretch;flex-direction:column}.forecast-time-box{width:100%;text-align:left}
 }
+
+/* FloodGuard AI camera live preview */
+.camera-video-frame{position:relative;width:100%;aspect-ratio:16/9;background:#17202b;border-radius:14px;overflow:hidden;display:flex;align-items:center;justify-content:center}
+.camera-video-frame img{width:100%;height:100%;object-fit:contain}
+.camera-offline-note{color:#c6d1de;text-align:center;padding:20px;font-size:14px}
+.camera-video-footer{font-size:12px;color:var(--text-muted,#637487);margin-top:12px}
