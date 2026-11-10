@@ -123,7 +123,7 @@ async function start() {
     process.exit(1);
   }
 
-  app.listen(PORT, () => {
+  const httpServer = app.listen(PORT, () => {
     console.log("FloodGuard v2 Render API listening on port " + PORT);
 
     const mqttEnabled =
@@ -132,6 +132,7 @@ async function start() {
     if (mqttEnabled) startMqttCollectorV2();
     else console.log("[MQTT v2] Collector disabled");
   });
+  require("./camera-relay").attachCameraRelay(httpServer);
 }
 
 start();
