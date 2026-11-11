@@ -1,7 +1,7 @@
 """FloodGuard camera relay: ESP32-S3 MJPEG -> backend WebSocket (JPEG frames).
 Run: pip install opencv-python websocket-client
 Set CAMERA_URL, RELAY_URL and CAMERA_STREAM_KEY as environment variables.
-No images are saved; AI will be integrated separately.
+No images are saved. Optional experimental AI overlay requires calibration.
 """
 import os
 import time
@@ -9,6 +9,7 @@ import socket
 from zeroconf import ServiceBrowser, ServiceListener, Zeroconf
 import cv2
 import websocket
+from water_level_ai import WaterLevelDetector
 
 CAMERA_URL = os.getenv("CAMERA_URL", "")
 CAMERA_FALLBACK_URL = os.getenv("CAMERA_FALLBACK_URL", "")
@@ -19,6 +20,7 @@ FPS_LIMIT = max(1, min(10, float(os.getenv("CAMERA_RELAY_FPS", "4"))))
 JPEG_QUALITY = max(40, min(95, int(os.getenv("CAMERA_JPEG_QUALITY", "85"))))
 MAX_WIDTH = max(320, min(1280, int(os.getenv("CAMERA_MAX_WIDTH", "1024"))))
 MAX_FRAME_BYTES = 180 * 1024  # Must match backend/camera-relay.js
+AI_ENABLED = os.getenv("CAMERA_AI_ENABLED", "0") == "1"
 
 
 class CameraListener(ServiceListener):
@@ -71,6 +73,9 @@ def discover_camera_url():
 
 
 def run():
+    detector = WaterLevelDetector() if AI_ENABLED else None
+    if detector:
+        print("Experimental AI overlay enabled. No database writes.", flush=True)
     if not STREAM_KEY:
         raise SystemExit("Set CAMERA_STREAM_KEY first; do not put it in public code.")
     while True:
@@ -109,6 +114,10 @@ def run():
                         frame, (MAX_WIDTH, round(height * MAX_WIDTH / width)),
                         interpolation=cv2.INTER_AREA
                     )
+                if detector:
+                    frame, level_cm = detector.process(frame)
+                    if level_cm is not None and int(now) % 5 == 0:
+                        print(f"AI optical water level (demo): {level_cm:.2f} cm", flush=True)
                 data = None
                 # Retry with lower JPEG quality only when necessary.
                 for quality in (JPEG_QUALITY, 75, 65, 50):
