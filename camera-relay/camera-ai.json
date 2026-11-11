@@ -1,0 +1,11 @@
+{
+  "calibrated": false,
+  "roi": {"x1": 0.25, "y1": 0.15, "x2": 0.75, "y2": 0.9},
+  "zero_y": null,
+  "full_y": null,
+  "full_cm": 17,
+  "hsv_lower": [85, 65, 40],
+  "hsv_upper": [135, 255, 255],
+  "min_row_coverage": 0.5,
+  "stable_rows": 6
+}
