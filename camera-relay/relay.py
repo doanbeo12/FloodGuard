@@ -16,8 +16,9 @@ CAMERA_MDNS_NAME = os.getenv("CAMERA_MDNS_NAME", "floodguard-cam").removesuffix(
 RELAY_URL = os.getenv("RELAY_URL", "wss://floodguard-backend-4dua.onrender.com/camera/uplink")
 STREAM_KEY = os.getenv("CAMERA_STREAM_KEY", "")
 FPS_LIMIT = max(1, min(10, float(os.getenv("CAMERA_RELAY_FPS", "4"))))
-JPEG_QUALITY = 65
-MAX_FRAME_BYTES = 180 * 1024
+JPEG_QUALITY = max(40, min(95, int(os.getenv("CAMERA_JPEG_QUALITY", "85"))))
+MAX_WIDTH = max(320, min(1280, int(os.getenv("CAMERA_MAX_WIDTH", "1024"))))
+MAX_FRAME_BYTES = 180 * 1024  # Must match backend/camera-relay.js
 
 
 class CameraListener(ServiceListener):
@@ -101,18 +102,37 @@ def run():
                 now = time.monotonic()
                 if now - last_sent < 1.0 / FPS_LIMIT:
                     continue
-                # Resize to keep upload data/bandwidth and backend memory bounded.
+                # Preserve camera detail while staying within Render's 180 KB cap.
                 height, width = frame.shape[:2]
-                if width > 640:
-                    frame = cv2.resize(frame, (640, round(height * 640 / width)))
-                encoded_ok, encoded = cv2.imencode(
-                    ".jpg", frame, [int(cv2.IMWRITE_JPEG_QUALITY), JPEG_QUALITY]
-                )
-                if not encoded_ok:
-                    continue
-                data = encoded.tobytes()
-                if len(data) > MAX_FRAME_BYTES:
-                    print("Skipping oversized frame", len(data), flush=True)
+                if width > MAX_WIDTH:
+                    frame = cv2.resize(
+                        frame, (MAX_WIDTH, round(height * MAX_WIDTH / width)),
+                        interpolation=cv2.INTER_AREA
+                    )
+                data = None
+                # Retry with lower JPEG quality only when necessary.
+                for quality in (JPEG_QUALITY, 75, 65, 50):
+                    if quality > JPEG_QUALITY:
+                        continue
+                    encoded_ok, encoded = cv2.imencode(
+                        ".jpg", frame, [int(cv2.IMWRITE_JPEG_QUALITY), quality]
+                    )
+                    if encoded_ok and encoded.nbytes <= MAX_FRAME_BYTES:
+                        data = encoded.tobytes()
+                        break
+                # For unusually detailed scenes, reduce size before giving up.
+                if data is None:
+                    small = cv2.resize(
+                        frame, None, fx=0.75, fy=0.75,
+                        interpolation=cv2.INTER_AREA
+                    )
+                    encoded_ok, encoded = cv2.imencode(
+                        ".jpg", small, [int(cv2.IMWRITE_JPEG_QUALITY), 65]
+                    )
+                    if encoded_ok and encoded.nbytes <= MAX_FRAME_BYTES:
+                        data = encoded.tobytes()
+                if data is None:
+                    print("Skipping oversized camera frame", flush=True)
                     continue
                 ws.send(data, opcode=websocket.ABNF.OPCODE_BINARY)
                 last_sent = now
