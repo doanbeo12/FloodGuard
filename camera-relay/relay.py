@@ -1,23 +1,26 @@
-"""FloodGuard camera relay: ESP32-S3 MJPEG -> backend WebSocket (JPEG frames).
-Run: pip install -r requirements.txt (HTTP MJPEG reader; no FFmpeg VideoCapture)
+"""FloodGuard: HTTP JPEG snapshots -> backend WebSocket (JPEG frames).
+Run: pip install -r requirements.txt
 Set CAMERA_URL, RELAY_URL and CAMERA_STREAM_KEY as environment variables.
 No images are saved. Optional experimental AI overlay requires calibration.
 """
 import os
 import time
 import socket
+from urllib.parse import urlsplit, urlunsplit
 from zeroconf import ServiceBrowser, ServiceListener, Zeroconf
 import cv2
 import websocket
 from water_level_ai import WaterLevelDetector
-from mjpeg_reader import MjpegCamera
+from snapshot_reader import SnapshotCamera, fetch_snapshot
 
 CAMERA_URL = os.getenv("CAMERA_URL", "")
+CAMERA_SNAPSHOT_URL = os.getenv("CAMERA_SNAPSHOT_URL", "")
+CAMERA_SNAPSHOT_PORT = int(os.getenv("CAMERA_SNAPSHOT_PORT", "81"))
 CAMERA_FALLBACK_URL = os.getenv("CAMERA_FALLBACK_URL", "")
 CAMERA_MDNS_NAME = os.getenv("CAMERA_MDNS_NAME", "floodguard-cam").removesuffix(".local")
 RELAY_URL = os.getenv("RELAY_URL", "wss://floodguard-backend-4dua.onrender.com/camera/uplink")
 STREAM_KEY = os.getenv("CAMERA_STREAM_KEY", "")
-FPS_LIMIT = max(1, min(10, float(os.getenv("CAMERA_RELAY_FPS", "4"))))
+FPS_LIMIT = max(0.5, min(10, float(os.getenv("CAMERA_RELAY_FPS", "2"))))
 JPEG_QUALITY = max(40, min(95, int(os.getenv("CAMERA_JPEG_QUALITY", "85"))))
 MAX_WIDTH = max(320, min(1280, int(os.getenv("CAMERA_MAX_WIDTH", "1024"))))
 MAX_FRAME_BYTES = 180 * 1024  # Must match backend/camera-relay.js
@@ -47,30 +50,62 @@ class CameraListener(ServiceListener):
         pass
 
 
+def snapshot_url(candidate):
+    """Use camera v1.2 snapshot endpoint on port 81, not /stream on 80."""
+    parts = urlsplit(candidate)
+    if parts.scheme != "http" or not parts.hostname:
+        raise ValueError("Camera URL must be http://host[:port]/...")
+    # An explicit /capture URL is accepted as-is, including its port.
+    if parts.path.rstrip("/") == "/capture":
+        return urlunsplit((parts.scheme, parts.netloc, "/capture", "", ""))
+    host = parts.hostname
+    if ":" in host:
+        host = f"[{host}]"
+    return f"http://{host}:{CAMERA_SNAPSHOT_PORT}/capture"
+
+
 def discover_camera_url():
+    # Explicit snapshot URL wins; legacy CAMERA_URL=/stream is converted to :81/capture.
+    if CAMERA_SNAPSHOT_URL:
+        return snapshot_url(CAMERA_SNAPSHOT_URL)
     if CAMERA_URL:
-        return CAMERA_URL
+        return snapshot_url(CAMERA_URL)
+
+    candidates = []
     try:
         address = socket.gethostbyname(CAMERA_MDNS_NAME + ".local")
-        return f"http://{address}/stream"
+        candidates.append(f"http://{address}:{CAMERA_SNAPSHOT_PORT}/capture")
     except OSError:
         pass
+
+    # Always do Zeroconf discovery even if Windows cached a stale .local IP.
     try:
         with Zeroconf() as zc:
             listener = CameraListener(zc)
             browser = ServiceBrowser(zc, "_http._tcp.local.", listener)
             end = time.monotonic() + 6
-            while time.monotonic() < end and not listener.url:
+            while time.monotonic() < end:
+                if listener.url:
+                    url = snapshot_url(listener.url)
+                    if url not in candidates:
+                        candidates.append(url)
+                    break
                 time.sleep(0.15)
             browser.cancel()
-            if listener.url:
-                return listener.url
     except Exception as exc:
         print("mDNS discovery error:", exc, flush=True)
+
     if CAMERA_FALLBACK_URL:
-        print("Using configured fallback camera URL", flush=True)
-        return CAMERA_FALLBACK_URL
-    raise RuntimeError("Camera not found: check mDNS on ESP32 and local Wi-Fi connectivity")
+        candidates.append(snapshot_url(CAMERA_FALLBACK_URL))
+
+    for url in dict.fromkeys(candidates):
+        try:
+            # Validate by requesting a real image, not just resolving the name.
+            fetch_snapshot(url, timeout=2)
+            return url
+        except Exception as exc:
+            print(f"Camera candidate unavailable: {url}: {exc}", flush=True)
+    raise RuntimeError("No responsive ESP32 snapshot endpoint; check Wi-Fi and :81/capture")
 
 
 def run():
@@ -83,10 +118,10 @@ def run():
         source = None
         ws = None
         try:
-            stream_url = discover_camera_url()
-            print("Opening local camera:", stream_url, flush=True)
-            source = MjpegCamera(stream_url, timeout=8)
-            print("Camera HTTP MJPEG reader connected", flush=True)
+            snapshot_url_current = discover_camera_url()
+            print("Camera snapshot endpoint:", snapshot_url_current, flush=True)
+            source = SnapshotCamera(snapshot_url_current, timeout=4)
+            print("Camera HTTP Snapshot reader ready", flush=True)
             ws = websocket.create_connection(
                 RELAY_URL, timeout=12,
                 header=["X-Camera-Key: " + STREAM_KEY],
@@ -96,6 +131,10 @@ def run():
             last_sent = 0.0
             failure_count = 0
             while True:
+                # Do not request more snapshots than we plan to send.
+                elapsed = time.monotonic() - last_sent
+                if elapsed < 1.0 / FPS_LIMIT:
+                    time.sleep(1.0 / FPS_LIMIT - elapsed)
                 ok, frame = source.read()
                 if not ok or frame is None:
                     failure_count += 1
@@ -105,8 +144,6 @@ def run():
                     continue
                 failure_count = 0
                 now = time.monotonic()
-                if now - last_sent < 1.0 / FPS_LIMIT:
-                    continue
                 # Preserve camera detail while staying within Render's 180 KB cap.
                 height, width = frame.shape[:2]
                 if width > MAX_WIDTH:
