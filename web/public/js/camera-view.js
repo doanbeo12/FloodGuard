@@ -28,7 +28,7 @@
   let lastAiAt = 0;
   let ongoing = false;
   let stopped = false;
-  let sequence = 0;
+  let lastServerFrameAt = 0;
 
   function cameraState(status) {
     badge.textContent = status === "live" ? "TRỰC TIẾP" :
@@ -74,7 +74,7 @@
       const stateResponse = await fetchTimed(base + "/camera/status", {}, 7000);
       if (!stateResponse.ok) throw Error("Camera API HTTP " + stateResponse.status);
       const state = await stateResponse.json();
-      if (state.online && state.seq !== sequence) {
+      if (state.online && state.lastFrameAt !== lastServerFrameAt) {
         const response = await fetchTimed(base + "/camera/latest.jpg?t=" + Date.now(), {}, 8000);
         if (!response.ok) throw Error("Image HTTP " + response.status);
         const blob = await response.blob();
@@ -93,7 +93,7 @@
         currentURL = url;
         image.src = url;
         if (old) URL.revokeObjectURL(old);
-        sequence = state.seq;
+        lastServerFrameAt = state.lastFrameAt;
         lastFrameAt = Date.now();
         updated.textContent = "Cập nhật: " + new Date(lastFrameAt).toLocaleTimeString("vi-VN",{hour12:false});
       }
