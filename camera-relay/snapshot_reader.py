@@ -3,6 +3,7 @@
 Firmware v1.2 exposes :81/capture. Each GET has a timeout and bounded size.
 """
 from urllib.request import build_opener, ProxyHandler, Request
+import time
 import cv2
 import numpy as np
 
@@ -23,7 +24,36 @@ def fetch_snapshot(url, timeout=4):
         content_type = response.headers.get("Content-Type", "").lower()
         if "image/jpeg" not in content_type:
             raise RuntimeError(f"Camera did not return JPEG: {content_type}")
-        data = response.read(MAX_JPEG + 1)
+        length_header = response.headers.get("Content-Length")
+        if length_header is not None:
+            try:
+                content_length = int(length_header)
+            except ValueError as exc:
+                raise RuntimeError("Invalid camera Content-Length") from exc
+            if not (4 <= content_length <= MAX_JPEG):
+                raise RuntimeError(f"Invalid snapshot size: {content_length}")
+            # Read only the announced JPEG size; never wait for HTTP EOF.
+            data = response.read(content_length)
+        else:
+            # Some ESP32 handlers keep the connection open without Content-Length.
+            # Stop at JPEG EOI instead of waiting for EOF or 512 KB.
+            buf = bytearray()
+            deadline = time.monotonic() + timeout
+            while time.monotonic() < deadline and len(buf) <= MAX_JPEG:
+                chunk = response.read1(min(4096, MAX_JPEG + 1 - len(buf)))
+                if not chunk:
+                    break
+                buf.extend(chunk)
+                if len(buf) >= 4:
+                    if buf[:2] != b"\xff\xd8":
+                        raise RuntimeError("Snapshot missing JPEG start marker")
+                    end = buf.find(b"\xff\xd9", 2)
+                    if end >= 0:
+                        buf = buf[:end + 2]
+                        break
+            else:
+                raise TimeoutError("Camera did not complete JPEG within timeout")
+            data = bytes(buf)
     if len(data) > MAX_JPEG:
         raise RuntimeError("Snapshot exceeds 512 KB")
     if len(data) < 4 or data[:2] != b"\xff\xd8" or data[-2:] != b"\xff\xd9":
