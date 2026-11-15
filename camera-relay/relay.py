@@ -1,5 +1,5 @@
 """FloodGuard camera relay: ESP32-S3 MJPEG -> backend WebSocket (JPEG frames).
-Run: pip install opencv-python websocket-client
+Run: pip install -r requirements.txt (HTTP MJPEG reader; no FFmpeg VideoCapture)
 Set CAMERA_URL, RELAY_URL and CAMERA_STREAM_KEY as environment variables.
 No images are saved. Optional experimental AI overlay requires calibration.
 """
@@ -10,6 +10,7 @@ from zeroconf import ServiceBrowser, ServiceListener, Zeroconf
 import cv2
 import websocket
 from water_level_ai import WaterLevelDetector
+from mjpeg_reader import MjpegCamera
 
 CAMERA_URL = os.getenv("CAMERA_URL", "")
 CAMERA_FALLBACK_URL = os.getenv("CAMERA_FALLBACK_URL", "")
@@ -84,9 +85,8 @@ def run():
         try:
             stream_url = discover_camera_url()
             print("Opening local camera:", stream_url, flush=True)
-            source = cv2.VideoCapture(stream_url, cv2.CAP_FFMPEG)
-            if not source.isOpened():
-                raise RuntimeError("Cannot open ESP32 camera stream")
+            source = MjpegCamera(stream_url, timeout=8)
+            print("Camera HTTP MJPEG reader connected", flush=True)
             ws = websocket.create_connection(
                 RELAY_URL, timeout=12,
                 header=["X-Camera-Key: " + STREAM_KEY],
