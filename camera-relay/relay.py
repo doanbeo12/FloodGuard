@@ -13,6 +13,7 @@ from urllib.parse import urlsplit, urlunsplit
 from zeroconf import ServiceBrowser, ServiceListener, Zeroconf
 import cv2
 import websocket
+import requests
 from water_level_ai import WaterLevelDetector
 from snapshot_reader import SnapshotCamera
 
@@ -28,6 +29,8 @@ JPEG_QUALITY = max(40, min(95, int(os.getenv("CAMERA_JPEG_QUALITY", "85"))))
 MAX_WIDTH = max(320, min(1280, int(os.getenv("CAMERA_MAX_WIDTH", "1024"))))
 MAX_FRAME_BYTES = 180 * 1024  # Must match backend/camera-relay.js
 AI_ENABLED = os.getenv("CAMERA_AI_ENABLED", "0") == "1"
+TRANSPORT = os.getenv("CAMERA_TRANSPORT", "http").lower()
+HTTP_BASE = os.getenv("CAMERA_HTTP_BASE", RELAY_URL.replace("wss://", "https://").replace("ws://", "http://").split("/camera/")[0]).rstrip("/")
 
 
 class CameraListener(ServiceListener):
@@ -218,62 +221,111 @@ def capture_worker(latest, stop):
                 return
 
 
+def http_sender(latest, stop):
+    """Send JPEG over HTTPS rather than a long-running WebSocket.
+
+    One-session keep-alive and small POSTs work around unstable WebSockets.
+    On failed upload, retry the *next* fresh image, never build a backlog.
+    """
+    print("HTTPS upload enabled:", HTTP_BASE + "/camera/frame", flush=True)
+    session = requests.Session()
+    session.headers.update({"X-Camera-Key": STREAM_KEY})
+    last_seq = 0
+    failures = 0
+    uploaded = 0
+    try:
+        while not stop.is_set():
+            item = latest.newer(last_seq, timeout=3)
+            if item is None:
+                continue
+            seq, jpeg, ai = item
+            last_seq = seq
+            try:
+                # AI independent of video frame upload; tiny JSON request.
+                if ai is not None:
+                    ar = session.post(HTTP_BASE + "/camera/ai",json=ai,
+                                      timeout=(5, 8))
+                    ar.raise_for_status()
+                reply = session.post(
+                    HTTP_BASE + "/camera/frame", data=jpeg,
+                    headers={"Content-Type": "image/jpeg"},
+                    timeout=(5, 10))
+                reply.raise_for_status()
+                failures = 0
+                uploaded += 1
+                if uploaded % 5 == 1:
+                    print(f"HTTPS camera uploaded frame #{uploaded} "
+                          f"({len(jpeg)} bytes)", flush=True)
+            except requests.RequestException as exc:
+                failures += 1
+                status = getattr(getattr(exc,"response",None),"status_code",None)
+                print(f"HTTPS upload error (HTTP {status}): {exc}", flush=True)
+                if status in (401,403):
+                    print("Check CAMERA_STREAM_KEY on laptop and Render",flush=True)
+                # Reopen TCP/TLS connections when the underlying connection breaks.
+                session.close()
+                session = requests.Session()
+                session.headers.update({"X-Camera-Key": STREAM_KEY})
+                if stop.wait(min(5,1+failures)):
+                    return
+    finally:
+        session.close()
+
+
+def websocket_sender(latest, stop):
+    """Legacy backup sender, enabled by CAMERA_TRANSPORT=websocket."""
+    while not stop.is_set():
+        ws=None
+        try:
+            ws=websocket.create_connection(RELAY_URL,timeout=12,
+                        header=["X-Camera-Key: "+STREAM_KEY],enable_multithread=True)
+            ws.settimeout(8)
+            print("WebSocket connected:",RELAY_URL,flush=True)
+            with latest.cv:
+                last_seq=latest.seq
+            while not stop.is_set():
+                item=latest.newer(last_seq,timeout=3)
+                if item is None:
+                    continue
+                seq,jpeg,ai=item
+                last_seq=seq
+                if ai is not None:
+                    ws.send(json.dumps(ai,separators=(",",":")),
+                            opcode=websocket.ABNF.OPCODE_TEXT)
+                ws.send(jpeg,opcode=websocket.ABNF.OPCODE_BINARY)
+        except Exception as exc:
+            print("WebSocket upload error:",exc,flush=True)
+            if stop.wait(3):
+                return
+        finally:
+            if ws is not None:
+                try:
+                    ws.close(timeout=1)
+                except Exception:
+                    pass
+
+
 def run():
     if not STREAM_KEY:
         raise SystemExit("Set CAMERA_STREAM_KEY first; do not put it in public code.")
-    print("FloodGuard relay: independent camera/AI and Render sender", flush=True)
-    if AI_ENABLED:
-        print("Experimental AI enabled; results require calibration.", flush=True)
-    latest = LatestFrame()
-    stop = threading.Event()
-    camera_thread = threading.Thread(target=capture_worker,
-                                      args=(latest, stop), daemon=True)
+    if TRANSPORT not in ("http","websocket"):
+        raise SystemExit("CAMERA_TRANSPORT must be http or websocket")
+    print(f"FloodGuard relay v2: {TRANSPORT} upload, independent AI",flush=True)
+    latest=LatestFrame()
+    stop=threading.Event()
+    camera_thread=threading.Thread(target=capture_worker,args=(latest,stop),daemon=True)
     camera_thread.start()
-    last_seq = 0
     try:
-        while not stop.is_set():
-            ws = None
-            try:
-                ws = websocket.create_connection(
-                    RELAY_URL, timeout=12,
-                    header=["X-Camera-Key: " + STREAM_KEY],
-                    enable_multithread=True,
-                )
-                # Sending should not block the camera worker; timeout only
-                # affects this WebSocket and causes sender reconnection.
-                ws.settimeout(8)
-                print("Connected to relay:", RELAY_URL, flush=True)
-                # Wait for a freshly captured frame; never send a stale image
-                # when Render reconnects after a long interruption.
-                with latest.cv:
-                    last_seq = latest.seq
-                while not stop.is_set():
-                    item = latest.newer(last_seq, timeout=3)
-                    if item is None:
-                        continue
-                    seq, jpeg, ai = item
-                    last_seq = seq
-                    ws.send(jpeg, opcode=websocket.ABNF.OPCODE_BINARY)
-                    if ai is not None:
-                        ws.send(json.dumps(ai, separators=(",", ":")),
-                                opcode=websocket.ABNF.OPCODE_TEXT)
-            except Exception as exc:
-                print("Render sender error:", exc,
-                      "- reconnecting WebSocket only in 3s", flush=True)
-                if stop.wait(3):
-                    break
-            finally:
-                if ws is not None:
-                    try:
-                        ws.close(timeout=1)
-                    except Exception:
-                        pass
+        if TRANSPORT=="http":
+            http_sender(latest,stop)
+        else:
+            websocket_sender(latest,stop)
     except KeyboardInterrupt:
-        print("Stopped.", flush=True)
+        print("Stopped.",flush=True)
     finally:
         stop.set()
         camera_thread.join(timeout=2)
 
 
-if __name__ == "__main__":
+if __name__=="__main__":
     run()
