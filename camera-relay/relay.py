@@ -243,9 +243,10 @@ def run():
                 # affects this WebSocket and causes sender reconnection.
                 ws.settimeout(8)
                 print("Connected to relay:", RELAY_URL, flush=True)
-                # New connection gets the most recent frame, but never
-                # retransmits old frames after an interrupted send.
-                last_seq = 0
+                # Wait for a freshly captured frame; never send a stale image
+                # when Render reconnects after a long interruption.
+                with latest.cv:
+                    last_seq = latest.seq
                 while not stop.is_set():
                     item = latest.newer(last_seq, timeout=3)
                     if item is None:
