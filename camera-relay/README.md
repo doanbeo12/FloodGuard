@@ -132,3 +132,36 @@ Nếu camera trả ảnh lỗi hoặc không còn nhìn thấy ranh giới nư�
 **Lưu ý về firmware v1.3:** Relay không còn chụp ảnh thử lúc tìm IP để tránh lỗi HTTP 429 do hai lần chụp liên tiếp. Chế độ snapshot hiện đặt timeout 10 giây cho việc lấy ảnh, và một luồng video vẫn phụ thuộc vào tốc độ đáp ứng của ESP32 và Internet. Nếu có thể, chỉ mở Web FloodGuard thay vì thêm tab /capture hoặc /stream trực tiếp.
 
 **Triển khai Web:** Các thay đổi Backend và Web cần được Render deploy từ nhánh main; nếu auto-deploy đang tắt, thực hiện deploy theo cấu hình dịch vụ của bạn. Không thể xác nhận đang chạy production chỉ từ việc push GitHub.
+
+
+## Camera ổn định qua HTTPS (2026-11-15): Web cập nhật mục tiêu 2 giây/ảnh
+
+**Bản mới thay đổi đường truyền mặc định** vì một số mạng laptop gặp \`The write operation timed out\` / \`10053\` khi gửi JPEG qua WebSocket liên tục. Không cần nạp lại firmware ESP32.
+
+Đường truyền: \`ESP32 :81/capture -> Python OpenCV + AI -> HTTPS POST /camera/ai và /camera/frame -> Render -> HTTPS GET /camera/status, /camera/latest.jpg -> Web\`. Camera AI, ảnh và việc gửi qua Internet vẫn chạy độc lập. Server chỉ giữ ảnh mới nhất trong RAM, không ghi DB; khi không có ảnh mới trong 15 giây sẽ báo offline. Web vẫn hiện **ảnh cuối** nhưng ghi rõ "Đang kết nối lại", không giả vờ đang live.
+
+Cần deploy cả **backend** lẫn **web** từ GitHub main sau khi push mã. Nếu Render Auto Deploy bật, theo dõi deploy mới nhất; nếu Auto Deploy tắt, deploy thủ công từ Render Dashboard.
+
+Trên laptop:
+\`\`\`powershell
+cd "C:\Users\doanb\Desktop\FloodGuard"
+git pull origin main
+cd camera-relay
+& "C:\Users\doanb\AppData\Local\Programs\Python\Python313\python.exe" -m pip install -r requirements.txt
+$env:CAMERA_TRANSPORT="http"
+$env:CAMERA_AI_ENABLED="1"
+$env:CAMERA_RELAY_FPS="0.5"
+$env:CAMERA_JPEG_QUALITY="85"
+$env:CAMERA_MAX_WIDTH="1024"
+Remove-Item Env:CAMERA_URL -ErrorAction SilentlyContinue
+Remove-Item Env:CAMERA_SNAPSHOT_URL -ErrorAction SilentlyContinue
+Remove-Item Env:CAMERA_FALLBACK_URL -ErrorAction SilentlyContinue
+# CAMERA_STREAM_KEY vẫn lấy từ biến bí mật Render; tuyệt đối không commit.
+& "C:\Users\doanb\AppData\Local\Programs\Python\Python313\python.exe" relay.py
+\`\`\`
+
+Nếu mDNS bị chặn nhưng IP hiện tại dùng được, bạn có thể tạm đặt \`CAMERA_SNAPSHOT_URL="http://IP:81/capture"\`. Xóa biến này khi muốn tự động tìm IP theo DHCP.
+
+**Kiểm tra:** Mở \`https://floodguard-backend-4dua.onrender.com/camera/status\`. Sau khi deploy Backend, cần trả JSON (trước khi chạy relay có thể \`online:false\`). Khi laptop chạy bản HTTP sẽ in \`HTTPS camera uploaded frame #...\`; Web nhận ảnh mới mỗi ~2 giây nếu camera và Internet đáp ứng. Nếu xuất hiện HTTP 404 tại \`/camera/frame\`, Backend chưa được deploy bản mới. HTTP 401 là sai \`CAMERA_STREAM_KEY\`. Nếu timeout ở HTTPS POST dù ảnh chụp trực tiếp ổn, cần xem mạng upload/Render; phần mềm không thể bảo đảm video live liên tục khi mất Internet.
+
+Để tạm trở về WebSocket upload cũ trong khi điều tra, \`$env:CAMERA_TRANSPORT="websocket"\`, nhưng Web mới đọc khung qua HTTP endpoints nên hai bên phải dùng cùng phiên bản đường truyền; chỉ bật chế độ này khi đồng thời dùng Web phiên bản cũ hoặc đã cấu hình cầu nối phù hợp.
