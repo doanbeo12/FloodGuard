@@ -13,6 +13,8 @@ function attachCameraRelay(server) {
   let publisher = null;
   let lastFrameAt = 0;
   let lastFrame = null;
+  let lastAi = null;
+  let lastAiAt = 0;
 
   function active() {
     return !!publisher && publisher.readyState === WebSocket.OPEN &&
@@ -50,9 +52,36 @@ function attachCameraRelay(server) {
     publisher = ws;
     lastFrameAt = 0;
     lastFrame = null;
+    lastAi = null;
+    lastAiAt = 0;
     notifyViewers({ type: "status", online: false });
+    notifyViewers({ type: "ai", status: "offline", levelCm: null });
     ws.on("message", (payload, isBinary) => {
-      if (!isBinary || publisher !== ws || payload.length < 4 || payload.length > MAX_FRAME_BYTES) return;
+      if (publisher !== ws) return;
+      if (!isBinary) {
+        if (payload.length > 1024) return;
+        let msg;
+        try { msg = JSON.parse(payload.toString("utf8")); }
+        catch (_) { return; }
+        if (msg.type !== "ai") return;
+        const allowed = new Set(["ok", "uncalibrated", "not_detected", "out_of_range", "low_confidence", "error"]);
+        if (!allowed.has(msg.status)) return;
+        const valid = msg.status === "ok" && typeof msg.levelCm === "number" &&
+          Number.isFinite(msg.levelCm) && msg.levelCm >= 0 && msg.levelCm <= 10 &&
+          typeof msg.confidence === "number" && Number.isFinite(msg.confidence) &&
+          msg.confidence >= 0 && msg.confidence <= 1;
+        const ai = {
+          type: "ai", status: valid ? "ok" : (msg.status === "ok" ? "error" : msg.status),
+          levelCm: valid ? Math.round(msg.levelCm * 100) / 100 : null,
+          confidence: valid ? Math.round(msg.confidence * 100) / 100 : null,
+          at: Date.now()
+        };
+        lastAi = ai;
+        lastAiAt = Date.now();
+        notifyViewers(ai);
+        return;
+      }
+      if (payload.length < 4 || payload.length > MAX_FRAME_BYTES) return;
       // Basic JPEG markers; malformed frames are discarded.
       if (payload[0] !== 0xFF || payload[1] !== 0xD8 ||
           payload[payload.length - 2] !== 0xFF || payload[payload.length - 1] !== 0xD9) return;
@@ -69,7 +98,10 @@ function attachCameraRelay(server) {
       publisher = null;
       lastFrame = null;
       lastFrameAt = 0;
+      lastAi = null;
+      lastAiAt = 0;
       notifyViewers({ type: "status", online: false });
+      notifyViewers({ type: "ai", status: "offline", levelCm: null });
     });
     ws.on("error", e => console.warn("[CAMERA] uplink:", e.message));
   });
@@ -78,6 +110,7 @@ function attachCameraRelay(server) {
     viewers.add(ws);
     ws.send(JSON.stringify({ type: "status", online: active() }));
     if (active() && lastFrame) ws.send(lastFrame, { binary: true });
+    if (active() && lastAi && Date.now() - lastAiAt < STALE_MS) ws.send(JSON.stringify(lastAi));
     ws.on("close", () => viewers.delete(ws));
     ws.on("error", () => viewers.delete(ws));
   });
