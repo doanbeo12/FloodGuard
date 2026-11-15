@@ -1,71 +1,96 @@
-"""FloodGuard: request individual JPEG snapshots from ESP32-S3-CAM.
+"""JPEG snapshot reader for FloodGuard ESP32-S3-CAM (firmware v1.2).
 
-Firmware v1.2 exposes :81/capture. Each GET has a timeout and bounded size.
+Reads incrementally rather than waiting for a full Content-Length or EOF.
+Distinguishes response-header timeout from partial JPEG transfer timeout.
 """
 from urllib.request import build_opener, ProxyHandler, Request
+from urllib.error import URLError
+import socket
 import time
+
 import cv2
 import numpy as np
 
+# Bypass environment HTTP proxies for private ESP32 address.
 _OPENER = build_opener(ProxyHandler({}))
 MAX_JPEG = 512 * 1024
 
 
-def fetch_snapshot(url, timeout=4):
-    req = Request(url, headers={
+def fetch_snapshot(url, timeout=8):
+    request = Request(url, headers={
         "Accept": "image/jpeg",
         "Cache-Control": "no-cache",
         "Connection": "close",
-        "User-Agent": "FloodGuard-Snapshot/1.0",
+        "User-Agent": "FloodGuard-Snapshot/1.1",
     })
-    with _OPENER.open(req, timeout=timeout) as response:
+    started = time.monotonic()
+    try:
+        response = _OPENER.open(request, timeout=timeout)
+    except (TimeoutError, socket.timeout, URLError) as exc:
+        raise TimeoutError(f"Snapshot connection/headers failed for {url}: {exc}") from exc
+
+    with response:
         if response.status != 200:
             raise RuntimeError(f"Camera HTTP status {response.status}")
         content_type = response.headers.get("Content-Type", "").lower()
         if "image/jpeg" not in content_type:
             raise RuntimeError(f"Camera did not return JPEG: {content_type}")
-        length_header = response.headers.get("Content-Length")
-        if length_header is not None:
+
+        header = response.headers.get("Content-Length")
+        expected = None
+        if header is not None:
             try:
-                content_length = int(length_header)
+                expected = int(header)
             except ValueError as exc:
-                raise RuntimeError("Invalid camera Content-Length") from exc
-            if not (4 <= content_length <= MAX_JPEG):
-                raise RuntimeError(f"Invalid snapshot size: {content_length}")
-            # Read only the announced JPEG size; never wait for HTTP EOF.
-            data = response.read(content_length)
-        else:
-            # Some ESP32 handlers keep the connection open without Content-Length.
-            # Stop at JPEG EOI instead of waiting for EOF or 512 KB.
-            buf = bytearray()
-            deadline = time.monotonic() + timeout
-            while time.monotonic() < deadline and len(buf) <= MAX_JPEG:
-                chunk = response.read1(min(4096, MAX_JPEG + 1 - len(buf)))
-                if not chunk:
+                raise RuntimeError("Camera invalid Content-Length") from exc
+            if not (4 <= expected <= MAX_JPEG):
+                raise RuntimeError(f"Camera invalid Content-Length: {expected}")
+
+        body = bytearray()
+        while len(body) <= MAX_JPEG:
+            if time.monotonic() - started >= timeout:
+                raise TimeoutError(
+                    f"Snapshot incomplete after {timeout}s: "
+                    f"received {len(body)} / {expected or '?'} JPEG bytes"
+                )
+            remaining = (expected - len(body)) if expected is not None else (MAX_JPEG + 1 - len(body))
+            if remaining <= 0:
+                break
+            try:
+                # read1 returns promptly with available bytes, unlike read(n)
+                # which may wait for all n bytes.
+                chunk = response.read1(min(2048, remaining))
+            except (socket.timeout, TimeoutError) as exc:
+                raise TimeoutError(
+                    f"Snapshot stalled after {len(body)} / {expected or '?'} "
+                    f"bytes from {url}"
+                ) from exc
+            if not chunk:
+                break
+            body.extend(chunk)
+            if len(body) >= 4 and body[-2:] == b"\xff\xd9":
+                break
+            if expected is None and len(body) >= 4:
+                end = body.find(b"\xff\xd9", 2)
+                if end >= 0:
+                    del body[end + 2:]
                     break
-                buf.extend(chunk)
-                if len(buf) >= 4:
-                    if buf[:2] != b"\xff\xd8":
-                        raise RuntimeError("Snapshot missing JPEG start marker")
-                    end = buf.find(b"\xff\xd9", 2)
-                    if end >= 0:
-                        buf = buf[:end + 2]
-                        break
-            else:
-                raise TimeoutError("Camera did not complete JPEG within timeout")
-            data = bytes(buf)
+
+    data = bytes(body)
     if len(data) > MAX_JPEG:
         raise RuntimeError("Snapshot exceeds 512 KB")
     if len(data) < 4 or data[:2] != b"\xff\xd8" or data[-2:] != b"\xff\xd9":
-        raise RuntimeError("Incomplete JPEG snapshot")
+        raise RuntimeError(
+            f"Incomplete JPEG: received {len(data)} / {expected or '?'} bytes"
+        )
     frame = cv2.imdecode(np.frombuffer(data, dtype=np.uint8), cv2.IMREAD_COLOR)
     if frame is None:
-        raise RuntimeError("Cannot decode camera JPEG")
+        raise RuntimeError(f"JPEG decode failed ({len(data)} bytes)")
     return frame
 
 
 class SnapshotCamera:
-    def __init__(self, url, timeout=4):
+    def __init__(self, url, timeout=8):
         self.url = url
         self.timeout = timeout
 
