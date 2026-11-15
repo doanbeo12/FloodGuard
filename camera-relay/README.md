@@ -102,3 +102,33 @@ $env:CAMERA_AI_ENABLED="0"
 Khi ổn định, xuất hiện \`Camera snapshot endpoint: http://IP:81/capture\` và \`Connected to relay\`. Nếu lỗi \`The write operation timed out\` vẫn còn, đó là lỗi gửi từ laptop đến Render chứ không được giải quyết hoàn toàn bằng đổi MJPEG sang snapshot. Nếu /capture bị kẹt ngay trên ESP32, cần xem /health và nguồn cấp.
 
 **Giới hạn:** snapshot 2 FPS không phải video mượt; mỗi ảnh tạo một request HTTP mới, có thể tăng overhead. Không đoán IP khi mDNS/hotspot bị chặn. Chế độ AI thử nghiệm vẫn chưa hiệu chuẩn/không ghi database.
+
+
+## Giai đoạn camera AI 0–10 cm + Web (2026-11-15)
+
+Web có ô riêng "Mực nước camera AI" ngay dưới video. Backend WebSocket \`/camera/uplink\` nhận thêm bản tin JSON từ laptop theo định dạng \`{"type":"ai","status":"ok","levelCm":5.2,"confidence":0.7}\`, rồi phát cho client \`/camera/view\`. Dữ liệu **chỉ hiển thị**, chưa lưu DB và không tác động cảnh báo hiện tại. Số đo hợp lệ bắt buộc trong khoảng 0–10 cm; kết quả bị mất/không hiệu chuẩn phải hiển thị "--".
+
+Đây là thuật toán OpenCV **thử nghiệm**, không phải mô hình AI học sâu đã huấn luyện. Ảnh ChatGPT tại 0,5,10 cm dùng để đánh giá bố trí camera, không thể coi tọa độ pixel đã hiệu chuẩn chính xác vì ảnh chụp màn hình bị cắt/kéo khung khác nhau. Thao tác hiệu chuẩn cần thực hiện **một lần trên laptop với camera và thước cố định**, bằng ảnh JPEG gốc của chính ESP32:
+
+1. Dừng \`relay.py\`. Giữ ESP32 v1.3 hoạt động, không đổi vị trí camera và thước, tránh chiếu sáng phản xạ quá mạnh.
+2. Mở PowerShell tại \`camera-relay\` và chạy:
+   \`\`\`powershell
+   & "C:\Users\doanb\AppData\Local\Programs\Python\Python313\python.exe" calibrate_water.py
+   \`\`\`
+3. Khi chương trình yêu cầu, đưa nước về **0 cm** (theo mốc thước), đợi ổn định, nhấn Enter. Trên cửa sổ ảnh, nhấp đúng mốc 0 trên thước và nhấn Enter.
+4. Đưa nước đến **5 cm**, đợi ổn định. Chương trình sẽ cho chọn ROI: **kéo một hình chữ nhật dọc, hẹp, nằm cạnh mép thước và phủ cả vùng ranh giới nước 0–10 cm**, nơi màu nước xanh tăng từ dưới lên khi nước dâng. Xác nhận ROI bằng Enter/Space. Sau đó nhấp đường mặt nước tại thước và nhấn Enter.
+5. Đưa nước đến **10 cm** và nhấp đường mặt nước tại thước; nhấn Enter. \`camera-ai.json\` sẽ cập nhật ba mốc chuẩn và \`calibrated: true\`.
+6. Chạy thử relay với AI:
+   \`\`\`powershell
+   $env:CAMERA_AI_ENABLED="1"
+   $env:CAMERA_RELAY_FPS="0.5"
+   & "C:\Users\doanb\AppData\Local\Programs\Python\Python313\python.exe" relay.py
+   \`\`\`
+   Cần có \`CAMERA_STREAM_KEY\` đúng với Backend Render trong phiên PowerShell. Chạy \`git pull origin main\` trước khi hiệu chuẩn, **không** pull ghi đè \`camera-ai.json\` sau khi đã hiệu chuẩn.
+7. Kiểm tra thực tế thêm ở **2,4,6,8 cm**; tính MAE = trung bình trị tuyệt đối của (AI - thước). Nếu thuật toán báo \`not_detected\` hoặc \`low_confidence\`, xem lại ROI, ánh sáng và màu nước. Không sử dụng số đo chưa kiểm chứng cho quyết định an toàn.
+
+Nếu camera trả ảnh lỗi hoặc không còn nhìn thấy ranh giới nước, Web hiển thị "Chưa xác định", không hiển thị số đo suy đoán. Nếu thước/camera bị di chuyển, phải hiệu chuẩn lại.
+
+**Lưu ý về firmware v1.3:** Relay không còn chụp ảnh thử lúc tìm IP để tránh lỗi HTTP 429 do hai lần chụp liên tiếp. Chế độ snapshot hiện đặt timeout 10 giây cho việc lấy ảnh, và một luồng video vẫn phụ thuộc vào tốc độ đáp ứng của ESP32 và Internet. Nếu có thể, chỉ mở Web FloodGuard thay vì thêm tab /capture hoặc /stream trực tiếp.
+
+**Triển khai Web:** Các thay đổi Backend và Web cần được Render deploy từ nhánh main; nếu auto-deploy đang tắt, thực hiện deploy theo cấu hình dịch vụ của bạn. Không thể xác nhận đang chạy production chỉ từ việc push GitHub.
