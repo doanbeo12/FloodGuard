@@ -4,6 +4,7 @@ Set CAMERA_URL, RELAY_URL and CAMERA_STREAM_KEY as environment variables.
 No images are saved. Optional experimental AI overlay requires calibration.
 """
 import os
+import json
 import time
 import socket
 from urllib.parse import urlsplit, urlunsplit
@@ -120,7 +121,7 @@ def run():
         try:
             snapshot_url_current = discover_camera_url()
             print("Camera snapshot endpoint:", snapshot_url_current, flush=True)
-            source = SnapshotCamera(snapshot_url_current, timeout=4)
+            source = SnapshotCamera(snapshot_url_current, timeout=10)
             print("Camera HTTP Snapshot reader ready", flush=True)
             ws = websocket.create_connection(
                 RELAY_URL, timeout=12,
@@ -130,6 +131,7 @@ def run():
             print("Connected to relay:", RELAY_URL, flush=True)
             last_sent = 0.0
             failure_count = 0
+            last_ai_log = 0.0
             while True:
                 # Do not request more snapshots than we plan to send.
                 elapsed = time.monotonic() - last_sent
@@ -151,10 +153,17 @@ def run():
                         frame, (MAX_WIDTH, round(height * MAX_WIDTH / width)),
                         interpolation=cv2.INTER_AREA
                     )
+                ai_result = None
                 if detector:
-                    frame, level_cm = detector.process(frame)
-                    if level_cm is not None and int(now) % 5 == 0:
-                        print(f"AI optical water level (demo): {level_cm:.2f} cm", flush=True)
+                    try:
+                        frame, level_cm = detector.process(frame)
+                        ai_result = detector.last_result
+                        if now - last_ai_log >= 5:
+                            print(f"AI optical level: {ai_result['status']} / {level_cm}", flush=True)
+                            last_ai_log = now
+                    except Exception as exc:
+                        print("AI failed:", exc, flush=True)
+                        ai_result = {"status": "error", "levelCm": None, "confidence": None}
                 data = None
                 # Retry with lower JPEG quality only when necessary.
                 for quality in (JPEG_QUALITY, 75, 65, 50):
@@ -181,6 +190,10 @@ def run():
                     print("Skipping oversized camera frame", flush=True)
                     continue
                 ws.send(data, opcode=websocket.ABNF.OPCODE_BINARY)
+                if ai_result is not None:
+                    ws.send(json.dumps({"type": "ai", **ai_result},
+                                       separators=(",", ":")),
+                            opcode=websocket.ABNF.OPCODE_TEXT)
                 last_sent = now
         except (Exception, KeyboardInterrupt) as exc:
             if isinstance(exc, KeyboardInterrupt):
