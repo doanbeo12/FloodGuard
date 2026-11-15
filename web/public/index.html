@@ -123,7 +123,19 @@
           <img id="cameraLiveImage" alt="Video trực tiếp ESP32-S3-CAM" style="display:none" />
           <div id="cameraOfflineText" class="camera-offline-note">Chưa nhận video từ laptop. Hãy chạy camera-relay.</div>
         </div>
-        <div class="camera-video-footer">ESP32-S3-CAM • Video MJPEG chuyển tiếp từ laptop • <span id="cameraLastFrame">Chưa có khung hình</span></div>
+        <div class="camera-video-footer">ESP32-S3-CAM • Ảnh JPEG từ laptop • <span id="cameraLastFrame">Chưa có khung hình</span></div>
+        <div class="camera-ai-panel" aria-live="polite">
+          <div class="camera-ai-main">
+            <div class="camera-ai-label">MỰC NƯỚC CAMERA AI <span class="camera-ai-tag">Thử nghiệm • 0–10 cm</span></div>
+            <div class="camera-ai-value"><strong id="cameraAiLevel">--</strong><span>cm</span></div>
+          </div>
+          <div class="camera-ai-details">
+            <div><span>Trạng thái</span><strong id="cameraAiStatus">Chờ kết quả từ laptop</strong></div>
+            <div><span>Độ tin cậy thuật toán</span><strong id="cameraAiConfidence">--</strong></div>
+            <div><span>Cập nhật</span><strong id="cameraAiUpdated">--</strong></div>
+          </div>
+          <small class="camera-ai-note">Số đo thị giác thử nghiệm, chưa dùng để tự động kích hoạt cảnh báo ngập. Cần hiệu chuẩn bằng thước thực tế.</small>
+        </div>
       </section>
 
       <section class="dashboard-box mt-4">
