@@ -59,7 +59,7 @@ function attachCameraHttp(app) {
     res.set({"Cache-Control":"no-store","Access-Control-Allow-Origin":"*"})
        .json({online,lastFrameAt:jpegAt||null,ageMs:jpegAt?now-jpegAt:null,
          transport:"http",seq:accepted,
-         ai:online&&ai&&now-aiAt<=STALE_MS?ai:{type:"ai",status:"offline",levelCm:null}});
+         ai:ai&&now-aiAt<=STALE_MS?ai:{type:"ai",status:"offline",levelCm:null}});
   });
 }
 module.exports={attachCameraHttp};
