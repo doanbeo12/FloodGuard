@@ -72,3 +72,33 @@ $env:CAMERA_AI_ENABLED="0"
 ```
 
 Nếu DNS .local trên Windows không hoạt động, `relay.py` vẫn thử tìm camera bằng Zeroconf. Hãy đảm bảo không đặt `CAMERA_URL` cố định cũ: `Remove-Item Env:CAMERA_URL -ErrorAction SilentlyContinue`. Bộ đọc mới không chữa được lỗi camera bị khóa cứng, Wi-Fi mất kết nối hoặc nguồn yếu. Nếu hiện `ESP32 MJPEG stream ended` / `timed out`, xem thêm `/health` trên firmware camera để chẩn đoán.
+
+
+## Snapshot mode (2026-11-15) — mặc định từ commit 03be42c
+
+**Yêu cầu firmware ESP32-S3-CAM v1.2 Diagnostics** với endpoint \`http://IP_CAMERA:81/capture\`. Endpoint \`/stream\` cổng 80 không còn được relay sử dụng. Không cần sửa Backend Render.
+
+- Relay lấy 1 ảnh JPEG qua HTTP GET mỗi chu kỳ, mặc định **2 FPS**; sau đó vẫn mã hóa và truyền JPEG lên Render qua WebSocket.
+- Mỗi lần GET có timeout 4 giây và giới hạn kích thước JPEG 512 KB; nếu camera trả ảnh không hợp lệ sẽ tự thử lại sau 3 giây.
+- Tự tìm IP bằng mDNS/Zeroconf. Relay thử tải ảnh từ từng IP trước khi chấp nhận, tránh IP .local bị cache cũ (nếu Zeroconf vẫn tìm thấy camera).
+- \`CAMERA_SNAPSHOT_URL\` cho phép chỉ định URL chụp nếu cần gỡ lỗi, ví dụ \`http://192.168.1.20:81/capture\`; hãy **xóa biến này** khi cần tự tìm IP.
+- Biến \`CAMERA_URL\` cũ vẫn được nhận; nếu là URL \`/stream\`, relay tự đổi sang cổng 81 và \`/capture\`, nhưng nếu IP cũ thì không tự tìm được. Cần xóa \`CAMERA_URL\` và \`CAMERA_FALLBACK_URL\` để hoàn toàn tự động.
+
+Cách chạy trên laptop Windows:
+\`\`\`powershell
+cd "C:\Users\doanb\Desktop\FloodGuard"
+git pull origin main
+cd camera-relay
+Remove-Item Env:CAMERA_URL -ErrorAction SilentlyContinue
+Remove-Item Env:CAMERA_SNAPSHOT_URL -ErrorAction SilentlyContinue
+Remove-Item Env:CAMERA_FALLBACK_URL -ErrorAction SilentlyContinue
+$env:CAMERA_MDNS_NAME="floodguard-cam"
+$env:CAMERA_RELAY_FPS="2"
+$env:CAMERA_AI_ENABLED="0"
+# Đặt CAMERA_STREAM_KEY trong PowerShell, bằng khóa của Backend Render (không commit lên GitHub)
+& "C:\Users\doanb\AppData\Local\Programs\Python\Python313\python.exe" relay.py
+\`\`\`
+
+Khi ổn định, xuất hiện \`Camera snapshot endpoint: http://IP:81/capture\` và \`Connected to relay\`. Nếu lỗi \`The write operation timed out\` vẫn còn, đó là lỗi gửi từ laptop đến Render chứ không được giải quyết hoàn toàn bằng đổi MJPEG sang snapshot. Nếu /capture bị kẹt ngay trên ESP32, cần xem /health và nguồn cấp.
+
+**Giới hạn:** snapshot 2 FPS không phải video mượt; mỗi ảnh tạo một request HTTP mới, có thể tăng overhead. Không đoán IP khi mDNS/hotspot bị chặn. Chế độ AI thử nghiệm vẫn chưa hiệu chuẩn/không ghi database.
