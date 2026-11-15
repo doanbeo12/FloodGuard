@@ -12,7 +12,7 @@ from zeroconf import ServiceBrowser, ServiceListener, Zeroconf
 import cv2
 import websocket
 from water_level_ai import WaterLevelDetector
-from snapshot_reader import SnapshotCamera, fetch_snapshot
+from snapshot_reader import SnapshotCamera
 
 CAMERA_URL = os.getenv("CAMERA_URL", "")
 CAMERA_SNAPSHOT_URL = os.getenv("CAMERA_SNAPSHOT_URL", "")
@@ -101,12 +101,15 @@ def discover_camera_url():
 
     for url in dict.fromkeys(candidates):
         try:
-            # Validate by requesting a real image, not just resolving the name.
-            fetch_snapshot(url, timeout=2)
+            # Validate TCP only: a preflight snapshot immediately followed by
+            # the real snapshot can trigger HTTP 429 on firmware v1.3.
+            parts = urlsplit(url)
+            with socket.create_connection((parts.hostname, parts.port or 80), timeout=3):
+                pass
             return url
         except Exception as exc:
             print(f"Camera candidate unavailable: {url}: {exc}", flush=True)
-    raise RuntimeError("No responsive ESP32 snapshot endpoint; check Wi-Fi and :81/capture")
+    raise RuntimeError("No reachable camera at port 81; check Wi-Fi, mDNS and camera HTTP server")
 
 
 def run():
