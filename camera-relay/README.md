@@ -55,3 +55,20 @@ Trên PowerShell, nếu trước đây từng đặt CAMERA_URL cố định, ch
 5. Muốn tắt thử nghiệm và trở lại video không xử lý: `$env:CAMERA_AI_ENABLED="0"`, rồi khởi động lại `relay.py`.
 
 Chương trình hiện **không tự gửi cm về Backend và không ghi database**. Bước sau sẽ bổ sung dữ liệu có timestamp + trạng thái chất lượng đo, sau khi kiểm chứng với thước thật qua nhiều mực nước. Vùng đo HSV mặc định chỉ nhắm đến nước xanh, có thể cần điều chỉnh theo ánh sáng.
+
+## Bản sửa ổn định MJPEG (2026-11-15)
+
+`relay.py` hiện dùng `mjpeg_reader.py` đọc MJPEG bằng HTTP thay vì OpenCV/FFmpeg `VideoCapture`. Bộ đọc kiểm tra marker JPEG, giới hạn buffer 1 MB, timeout 8 giây khi camera không gửi thêm dữ liệu; khi stream ngắt, relay tự đóng và kết nối lại sau 3 giây. Phần gửi WebSocket tới Render và chế độ AI tùy chọn không thay đổi.
+
+Trên laptop Windows, dừng relay bằng Ctrl+C, cập nhật mã nguồn rồi chạy lại:
+```powershell
+cd "C:\Users\doanb\Desktop\FloodGuard"
+git pull origin main
+cd camera-relay
+$env:CAMERA_RELAY_FPS="2"
+$env:CAMERA_AI_ENABLED="0"
+# CAMERA_STREAM_KEY phải được cấu hình trong PowerShell này (không ghi khóa lên GitHub).
+& "C:\Users\doanb\AppData\Local\Programs\Python\Python313\python.exe" relay.py
+```
+
+Nếu DNS .local trên Windows không hoạt động, `relay.py` vẫn thử tìm camera bằng Zeroconf. Hãy đảm bảo không đặt `CAMERA_URL` cố định cũ: `Remove-Item Env:CAMERA_URL -ErrorAction SilentlyContinue`. Bộ đọc mới không chữa được lỗi camera bị khóa cứng, Wi-Fi mất kết nối hoặc nguồn yếu. Nếu hiện `ESP32 MJPEG stream ended` / `timed out`, xem thêm `/health` trên firmware camera để chẩn đoán.
