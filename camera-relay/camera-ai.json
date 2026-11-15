@@ -1,11 +1,37 @@
 {
   "calibrated": false,
-  "roi": {"x1": 0.25, "y1": 0.15, "x2": 0.75, "y2": 0.9},
-  "zero_y": null,
-  "full_y": null,
-  "full_cm": 17,
-  "hsv_lower": [85, 65, 40],
-  "hsv_upper": [135, 255, 255],
-  "min_row_coverage": 0.5,
-  "stable_rows": 6
+  "roi": {
+    "x1": 0.28,
+    "y1": 0.1,
+    "x2": 0.43,
+    "y2": 0.8
+  },
+  "anchors": [
+    {
+      "cm": 0,
+      "y": null
+    },
+    {
+      "cm": 5,
+      "y": null
+    },
+    {
+      "cm": 10,
+      "y": null
+    }
+  ],
+  "full_cm": 10,
+  "hsv_lower": [
+    80,
+    50,
+    45
+  ],
+  "hsv_upper": [
+    135,
+    255,
+    255
+  ],
+  "min_row_coverage": 0.45,
+  "stable_rows": 5,
+  "min_confidence": 0.45
 }
