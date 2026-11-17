@@ -135,7 +135,10 @@ function attachNode1Api(app) {
   // Operational status only: no credentials, host or database name in response.
   app.get("/api/node1/storage-status",(_req,res)=>{
     res.set({"Cache-Control":"no-store","Access-Control-Allow-Origin":"*"})
-      .json({...storeStatus,buffered:pending.length,
+      .json({enabled:storeStatus.enabled,saved:storeStatus.saved,
+        failed:storeStatus.failed,dropped:storeStatus.dropped,
+        buffered:pending.length,lastSavedAt:storeStatus.lastSavedAt,
+        lastErrorCode:storeStatus.lastErrorCode,
         nextRetryInMs:Math.max(0,nextRetryAt-Date.now()),
         status:!SAVE_MYSQL?"DISABLED":storeStatus.saved>0 && !storeStatus.lastErrorCode?"WRITING":
           storeStatus.lastErrorCode?"DB_ERROR":"WAITING_FOR_FIRST_WRITE"});
