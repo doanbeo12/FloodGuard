@@ -1,6 +1,6 @@
 "use strict";
 // FloodGuard sensor-only, experimental DEMO forecast.
-// 1 real minute = 1 simulated hour; 24/48/72h => 24/48/72 real minutes.
+// 1 real minute = 1 simulated hour; 24/48/64h => 24/48/64 real minutes.
 // No external weather API, tidal data or forecast services.
 const SAMPLE_MAX = 540; // 90 min @ 10s
 const MAX_AGE_MS = 30000;
@@ -56,7 +56,7 @@ function forecast() {
   const historyMinutes=first?round((last.at-first.at)/60000,2):0;
   const base={experimental:true,source:"node1-sensors",
     timeScale:{realMinutesPerSimHour:1},
-    horizons:[24,48,72],
+    horizons:[24,48,64],
     at:new Date(now).toISOString(),
     lastSensorAt:last?new Date(last.at).toISOString():null,
     historyMinutes, online:fresh,
@@ -100,7 +100,7 @@ function forecast() {
     }))
   };
   // Short-term AI level tendency only. Long horizon extrapolation is intentionally
-  // prohibited: extending 3-minute trends 24–72 simulated hours invents precision.
+  // prohibited: extending 3-minute trends 24–64 simulated hours invents precision.
   const waterValue=last.aiLevelCm;
   const water={
     currentCm:finite(waterValue)?round(waterValue,2):null,
@@ -111,7 +111,19 @@ function forecast() {
       estimatedCm:null,status:"NOT_AVAILABLE",
       note:"Chưa có mô hình chu kỳ được kiểm định cho chân trời dài"}))
   };
+  // Three-hour simulated window (3 real minutes). Values are risk categories,
+  // not calibrated probabilities or an unsupported centimeter extrapolation.
+  const rain3h=rainNow?"RAINING":!enough?"INSUFFICIENT_DATA":
+    score>=5?"HIGH":score>=3?"WATCH":"LOW";
+  const waterReliable=finite(waterValue)&&waterTrend;
+  const flood3h=!finite(waterValue)?"INSUFFICIENT_DATA":
+    waterValue>=9?"HIGH":waterValue>=7?"WATCH":
+    !waterReliable?"INSUFFICIENT_DATA":
+    waterTrend.perMinute>0.08 && (rainNow||score>=3)?"WATCH":"LOW";
+  const nearTerm={simHours:3,realMinutes:3,rainRisk:rain3h,
+    floodRisk:flood3h,waterCm:finite(waterValue)?round(waterValue,2):null,
+    waterTrend:water.status};
   return {...base,ready:!!enough,reason:enough?null:"COLLECTING_HISTORY",
-    rain,water, tide:{available:false,reason:"NO_TIDE_SENSOR"}};
+    rain,water,nearTerm, tide:{available:false,reason:"NO_TIDE_SENSOR"}};
 }
 module.exports={observe,forecast};
