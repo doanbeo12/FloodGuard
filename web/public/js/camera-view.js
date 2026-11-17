@@ -22,7 +22,7 @@
     offline: "AI ngoại tuyến",
     error: "Lỗi đo mực nước"
   };
-  const INTERVAL_MS = 2000;
+  const INTERVAL_MS = 1000;
   let currentURL = null;
   let lastFrameAt = 0;
   let lastAiAt = 0;
