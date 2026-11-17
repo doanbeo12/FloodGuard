@@ -7,6 +7,10 @@ const sensorForecast = require("./node1-forecast");
 
 const SAVE_MYSQL = String(process.env.NODE1_STORE_MYSQL || "false").toLowerCase() === "true";
 let tableReady = false;
+const MAX_DB_BUFFER = 360; // limit memory (~60 minutes at 10 s telemetry)
+const DB_RETRY_MS = 30000;
+const storeStatus = { enabled:SAVE_MYSQL, saved:0, failed:0, dropped:0,
+  buffered:0, lastSavedAt:null, lastError:null, lastErrorCode:null, lastAttemptAt:null };
 
 async function storeTelemetry(d) {
   if (!tableReady) {
@@ -45,7 +49,40 @@ function attachNode1Api(app) {
   const broker=process.env.MQTT_NODE1_URL||"mqtt://broker.hivemq.com:1883";
   const enabled=process.env.MQTT_NODE1_ENABLED==="true";
   let latest=null, lastAt=0, accepted=0;
-  let storeQueue=Promise.resolve();
+  const pending=[];
+  let flushing=false;
+  let nextRetryAt=0;
+  async function flushTelemetry(){
+    if(!SAVE_MYSQL || flushing || pending.length===0 || Date.now()<nextRetryAt)return;
+    flushing=true;
+    try{
+      // Keep the event loop and Web responsive. Bound each attempt to 20 inserts.
+      for(let count=0;count<20 && pending.length;count++){
+        storeStatus.lastAttemptAt=new Date().toISOString();
+        await storeTelemetry(pending[0]);
+        pending.shift();
+        storeStatus.saved++;
+        storeStatus.lastSavedAt=new Date().toISOString();
+        storeStatus.lastError=null;
+        storeStatus.lastErrorCode=null;
+      }
+      storeStatus.buffered=pending.length;
+      nextRetryAt=0;
+    }catch(err){
+      tableReady=false;
+      storeStatus.failed++;
+      storeStatus.lastError=String(err.message||"Unknown database error").slice(0,220);
+      storeStatus.lastErrorCode=err.code||null;
+      storeStatus.buffered=pending.length;
+      nextRetryAt=Date.now()+DB_RETRY_MS;
+      console.error("[NODE1 DB] save failed (retry in 30s):",err.code||"",err.message);
+    }finally{flushing=false;}
+  }
+  if(SAVE_MYSQL){
+    const worker=setInterval(()=>void flushTelemetry(),1000);
+    if(typeof worker.unref==="function")worker.unref();
+  }
+
   const num=(x,lo,hi)=>typeof x==="number"&&Number.isFinite(x)&&x>=lo&&x<=hi?x:null;
 
   function normalize(d) {
@@ -68,12 +105,11 @@ function attachNode1Api(app) {
     if(!out)return false;
     latest=out;lastAt=Date.now();accepted++;
     sensorForecast.observe(out);
-    if(SAVE_MYSQL) {
-      // Keep UI responsive even if MySQL is temporarily unavailable.
-      storeQueue=storeQueue.then(()=>storeTelemetry(out)).catch(err=>{
-        tableReady=false;
-        console.error("[NODE1] MySQL save failed:",err.message);
-      });
+    if(SAVE_MYSQL){
+      pending.push(out);
+      if(pending.length>MAX_DB_BUFFER){pending.shift();storeStatus.dropped++;}
+      storeStatus.buffered=pending.length;
+      void flushTelemetry();
     }
     if(accepted===1 || accepted%10===0)
       console.log("[NODE1] received",source,"seq:",out.seq,"count:",accepted);
@@ -95,6 +131,14 @@ function attachNode1Api(app) {
     res.set({"Cache-Control":"no-store","Access-Control-Allow-Origin":"*"})
       .json({online,ageMs:latest?Date.now()-lastAt:null,node:online?latest:null,
         storage:SAVE_MYSQL?"mysql":"memory",transport:enabled?"mqtt":"https"});
+  });
+  // Operational status only: no credentials, host or database name in response.
+  app.get("/api/node1/storage-status",(_req,res)=>{
+    res.set({"Cache-Control":"no-store","Access-Control-Allow-Origin":"*"})
+      .json({...storeStatus,buffered:pending.length,
+        nextRetryInMs:Math.max(0,nextRetryAt-Date.now()),
+        status:!SAVE_MYSQL?"DISABLED":storeStatus.saved>0 && !storeStatus.lastErrorCode?"WRITING":
+          storeStatus.lastErrorCode?"DB_ERROR":"WAITING_FOR_FIRST_WRITE"});
   });
   app.get("/api/node1/forecast",(_req,res)=>{
     res.set({"Cache-Control":"no-store","Access-Control-Allow-Origin":"*"})
