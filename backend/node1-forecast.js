@@ -7,6 +7,7 @@ const MAX_AGE_MS = 30000;
 const MIN_HISTORY_MS = 120000;
 const SIM_HOURS_PER_REAL_MINUTE = 1;
 const records = [];
+const randomForest = require("./node1-rf");
 
 const finite = x => typeof x==="number" && Number.isFinite(x);
 const clamp = (x,min,max)=>Math.min(max,Math.max(min,x));
@@ -62,7 +63,8 @@ function forecast() {
     historyMinutes, online:fresh,
     limitations:["Chỉ dự báo mô phỏng dựa trên cảm biến, không phải dự báo thời tiết/triều thực tế",
       "Chưa có Node triều; không dự báo biên độ hoặc đỉnh triều"]};
-  if(!fresh)return {...base,ready:false,reason:"NODE_OFFLINE",rain:null,water:null};
+  if(!fresh)return {...base,ready:false,reason:"NODE_OFFLINE",rain:null,water:null,
+    model:{ready:false,modelsAvailable:randomForest.predict(records).modelsAvailable}};
   const p=trend("pressureHpa"),h=trend("humidityPct");
   const waterTrend=trend("aiLevelCm",5*60000);
   const rh=last.humidityPct, temp=last.temperatureC, dp=dewpointC(temp,rh);
@@ -111,19 +113,33 @@ function forecast() {
       estimatedCm:null,status:"NOT_AVAILABLE",
       note:"Chưa có mô hình chu kỳ được kiểm định cho chân trời dài"}))
   };
-  // Three-hour simulated window (3 real minutes). Values are risk categories,
-  // not calibrated probabilities or an unsupported centimeter extrapolation.
-  const rain3h=rainNow?"RAINING":!enough?"INSUFFICIENT_DATA":
-    score>=5?"HIGH":score>=3?"WATCH":"LOW";
-  const waterReliable=finite(waterValue)&&waterTrend;
-  const flood3h=!finite(waterValue)?"INSUFFICIENT_DATA":
-    waterValue>=9?"HIGH":waterValue>=7?"WATCH":
-    !waterReliable?"INSUFFICIENT_DATA":
-    waterTrend.perMinute>0.08 && (rainNow||score>=3)?"WATCH":"LOW";
+  // A forecast requires a trained Random Forest; never present a sensor
+  // threshold heuristic as a machine-learning forecast.
+  const model=randomForest.predict(records);
+  const risk=p=>typeof p!=="number"?"INSUFFICIENT_DATA":
+    p>=0.65?"HIGH":p>=0.35?"WATCH":"LOW";
+  const p=model.probabilities;
+  const rain3h=rainNow?"RAINING":risk(p.rain3);
+  const flood3h=risk(p.flood3);
+  rain.status=rain3h;
+  rain.byHorizon=base.horizons.map(hours=>{
+    const prob=p["rain"+hours];
+    const level=risk(prob);
+    return {simHours:hours,realMinutes:hours,status:level,
+      outlook:level==="HIGH"?"Nguy cơ mưa cao":
+        level==="WATCH"?"Có khả năng mưa":
+        level==="LOW"?"Ít dấu hiệu mưa":"Chưa có mô hình"};
+  });
   const nearTerm={simHours:3,realMinutes:3,rainRisk:rain3h,
     floodRisk:flood3h,waterCm:finite(waterValue)?round(waterValue,2):null,
     waterTrend:water.status};
-  return {...base,ready:!!enough,reason:enough?null:"COLLECTING_HISTORY",
-    rain,water,nearTerm, tide:{available:false,reason:"NO_TIDE_SENSOR"}};
+  const trained=model.modelsAvailable.length>0;
+  const hasResult=rainNow || Object.keys(p).length>0;
+  return {...base,ready:trained&&hasResult,
+    reason:!trained?"MODEL_NOT_TRAINED":!hasResult?"INSUFFICIENT_FEATURES":null,
+    rain,water,nearTerm,model:{
+      ready:trained,modelsAvailable:model.modelsAvailable,
+      trainedOn:model.trainedOn,metrics:model.metrics
+    },tide:{available:false,reason:"NO_TIDE_SENSOR"}};
 }
 module.exports={observe,forecast};
