@@ -1,3 +1,25 @@
+# FloodGuard – Node 1 MQTT (SIM7680C / Wintel)
+
+**Current transport (Nov 17, 2026):** Node 1 publishes telemetry every ~10s over SIM7680C MQTT/TCP to broker.hivemq.com:1883. Render subscribes on a dedicated topic using MQTT_NODE1_ENABLED. Old Central, Node2, ESP-NOW and HTTPS-on-SIM upload are not used.
+
+## Setup
+
+1. Open `node1-single` with PlatformIO. Configure Wi-Fi, local `NODE_AI_KEY` and `SIM_BAUD 9600`, APN `m9-wintel`. The pins remain GPIO18 RX / GPIO19 TX, connected to module TX / RX.
+2. Confirm `MQTT_TOPIC_NODE1` in `include/config.h` equals Render `MQTT_NODE1_TOPIC` exactly: `flood-monitoring/floodguard-doanbeo12/node1-telemetry-v3`.
+3. Set `ENABLE_4G_UPLOAD 1` to enable MQTT (the variable name is retained for firmware compatibility). **Keep `ENABLE_PUMPS 0` for commissioning**.
+4. Render Backend Environment: `MQTT_NODE1_ENABLED=true`; `MQTT_NODE1_URL=mqtt://broker.hivemq.com:1883`; `MQTT_NODE1_TOPIC=flood-monitoring/floodguard-doanbeo12/node1-telemetry-v3`. The legacy `MQTT_ENABLED=false` and `MQTT_V2_ENABLED=false` to prevent old collectors handling incorrect data.
+5. Set `NODE1_STORE_MYSQL=false` until current MySQL connectivity is repaired; change to `true` to write `node1_telemetry` after database confirmation. Current dashboard reads latest telemetry from Backend memory regardless of DB status.
+6. Run the firmware, watch for `[MQTT] Connected` and `Node1 -> MQTT: OK`. Confirm Backend logs `[NODE1 MQTT] Listening` and `[NODE1] received mqtt`, then open `/api/node1/status`.
+
+## Safety and limitations
+
+- HiveMQ public port 1883 has **no authentication or encryption**: do not transmit secrets, GPS, phone numbers, or private data; topic secrecy does not offer security. Use a private TLS/authenticated broker before real deployment. Never control pumps based on broker messages; pump safety remains local ESP32.
+- No broker or modem was physically tested in this update; logs may reveal additional AT syntax/firmware issues.
+- Do **not** overwrite a locally customized `include/config.h` with placeholder Wi-Fi/keys during `git pull`. Keep a private backup.
+- Camera remains MJPEG /stream -> laptop relay -> Render independently; laptop AI -> Node 1 Wi-Fi uses `NODE_AI_KEY`.
+
+---
+
 # FloodGuard – Node 1 (ESP32 + A7680C)
 
 Node 2, Central và ESP-NOW đã loại bỏ. Node 1 đọc cảm biến, nhận kết quả OpenCV/YOLO từ laptop qua Wi-Fi nội bộ và đẩy trạng thái qua SIM A7680C tới Backend Render.
