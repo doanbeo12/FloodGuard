@@ -8,11 +8,16 @@
     const n=el("nodeBadge");n.textContent=online?"Node 1: Trực tuyến":"Node 1: Ngoại tuyến";
     n.className="pill "+(online?"good":"muted");
   }
+  let busy=false, timer=null, stopped=false;
+  const schedule=(ms=2000)=>{if(timer!==null)clearTimeout(timer);if(!stopped)timer=setTimeout(refresh,ms);};
   async function refresh(){
+    if(busy||stopped)return;
+    if(document.hidden){schedule(2000);return;}
+    busy=true;
     try{
       const controller=new AbortController(), timer=setTimeout(()=>controller.abort(),7000);
       let response;
-      try{response=await fetch(base+"/api/node1/status",{cache:"no-store",signal:controller.signal});}
+      try{response=await fetch(base+"/api/node1/status?t="+Date.now(),{cache:"no-store",signal:controller.signal});}
       finally{clearTimeout(timer);}
       if(!response.ok)throw Error("HTTP "+response.status);
       const data=await response.json();
@@ -39,8 +44,16 @@
       write("windRpm",val(n.windRpm,0)+" RPM");
       write("jsnLevel",val(n.jsnLevelCm)+" cm");
       write("nodeUpdated",n.at?new Date(n.at).toLocaleTimeString("vi-VN",{hour12:false}):"--");
-    }catch(e){badge(false);}
+    }catch(e){
+      badge(false);
+      for(const id of ["rainState","rainTips","rainTotal","rainPlate","pumpIn","pumpOut","pumpMode","temperature","humidity","pressure","windRpm","jsnLevel","nodeUpdated"])write(id,"--");
+      write("pumpFault","");
+    }finally{busy=false;schedule();}
   }
+  const resume=()=>{stopped=false;if(!busy)schedule(0);};
+  window.addEventListener("pageshow",resume);
+  window.addEventListener("focus",()=>{if(!document.hidden)resume();});
+  document.addEventListener("visibilitychange",()=>{if(!document.hidden)resume();});
+  window.addEventListener("pagehide",()=>{stopped=true;if(timer!==null)clearTimeout(timer);timer=null;});
   refresh();
-  setInterval(refresh,5000);
 })();
