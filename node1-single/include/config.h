@@ -7,11 +7,11 @@
 #define NODE_AI_KEY "SET_PRIVATE_LOCAL_AI_KEY"
 #define NODE_UPLOAD_KEY "SET_SAME_AS_RENDER_NODE1_UPLOAD_KEY"
 #define NODE_UPLOAD_URL "https://floodguard-backend-4dua.onrender.com/api/node1/telemetry"
-#define NODE_APN "YOUR_SIM_APN"
+#define NODE_APN "m9-wintel" // From working Central v1.6.2; change if SIM is not Wintel
 #define ENABLE_PUMPS 0
-#define ENABLE_4G_UPLOAD 0
+#define ENABLE_4G_UPLOAD 0 // Enable only after AT/HTTPS tests succeed
 #define MOSFET_ACTIVE_HIGH 1
-#define SIM_BAUD 115200
+#define SIM_BAUD 9600 // MKE-M21 SIM7680C factory baud
 #define SIM_RX 18
 #define SIM_TX 19
 #define I2C_SDA 21
@@ -32,3 +32,8 @@
 #define MAX_FILL_MS 60000UL
 #define MAX_DRAIN_MS 90000UL
 #define PUMP_DEADTIME_MS 1500UL
+
+// Secure HTTPS: TLS 1.2, enable SNI for Render domain on SSL context 0.
+#define SIM_SSL_CONTEXT 0
+#define SIM_NETWORK_CHECK_MS 30000UL
+#define SIM_REGISTER_WAIT_MS 20000UL
