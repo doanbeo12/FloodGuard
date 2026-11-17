@@ -1,18 +1,15 @@
 (() => {
   "use strict";
-  // HTTPS polling transport for unreliable websocket networks.
-  // Keep last good image visible during brief outages, but never label it live.
-  const image = document.getElementById("cameraLiveImage");
-  const placeholder = document.getElementById("cameraOfflineText");
-  const badge = document.getElementById("cameraLiveBadge");
-  const updated = document.getElementById("cameraLastFrame");
-  const aiLevel = document.getElementById("cameraAiLevel");
-  const aiStatus = document.getElementById("cameraAiStatus");
-  const aiConfidence = document.getElementById("cameraAiConfidence");
-  const aiUpdated = document.getElementById("cameraAiUpdated");
+  const el = id => document.getElementById(id);
+  const image = el("cameraLiveImage"), placeholder = el("cameraOfflineText");
+  const badge = el("cameraLiveBadge"), updated = el("cameraLastFrame");
+  const aiLevel = el("cameraAiLevel"), aiStatus = el("cameraAiStatus");
+  const aiConfidence = el("cameraAiConfidence"), aiUpdated = el("cameraAiUpdated");
   if (!image || !placeholder || !badge || !updated) return;
 
   const base = String(window.FLOODGUARD_API_BASE_URL || location.origin).replace(/\/$/, "");
+  const POLL_MS = 1000;
+  const STALE_MS = 15000; // Mirrors backend/camera-http.js
   const labels = {
     ok: "Đã nhận diện (thử nghiệm)",
     uncalibrated: "Chưa hiệu chuẩn",
@@ -22,107 +19,122 @@
     offline: "AI ngoại tuyến",
     error: "Lỗi đo mực nước"
   };
-  const INTERVAL_MS = 1000;
-  let currentURL = null;
-  let lastFrameAt = 0;
-  let lastAiAt = 0;
-  let ongoing = false;
-  let stopped = false;
-  let lastServerFrameAt = 0;
+  let currentURL = null, lastFrameKey = null, lastFrameAt = 0;
+  let working = false, timer = null, stopped = false, forceRefresh = true;
 
-  function cameraState(status) {
-    badge.textContent = status === "live" ? "TRỰC TIẾP" :
-                        status === "waiting" ? "Đang kết nối lại" : "Camera ngoại tuyến";
-    badge.className = "status-pill " + (status === "live" ? "good" : "muted");
-    // Preserve the last successfully received image, but mark it stale.
+  function cameraState(state) {
+    badge.textContent = state === "live" ? "TRỰC TIẾP" :
+      state === "retry" ? "Mất kết nối • Đang thử lại" : "Camera ngoại tuyến";
+    badge.className = "status-pill " + (state === "live" ? "good" : "muted");
     image.style.display = currentURL ? "block" : "none";
     placeholder.style.display = currentURL ? "none" : "block";
-    if (status !== "live" && lastFrameAt) {
-      updated.textContent = "Ảnh cuối: " + new Date(lastFrameAt).toLocaleTimeString("vi-VN",
-                                  {hour12:false}) + " (chưa có ảnh mới)";
+    if (state !== "live" && lastFrameAt) {
+      updated.textContent = "Ảnh cuối: " +
+        new Date(lastFrameAt).toLocaleTimeString("vi-VN", {hour12:false}) +
+        " (không trực tiếp)";
     }
   }
 
-  function showAI(data) {
+  function showAI(ai) {
     if (!aiLevel) return;
-    const valid = data?.status === "ok" && typeof data.levelCm === "number" &&
-      Number.isFinite(data.levelCm) && data.levelCm >= 0 && data.levelCm <= 10;
-    aiLevel.textContent = valid ? data.levelCm.toFixed(1) : "--";
-    aiStatus.textContent = labels[data?.status] || "Chưa có dữ liệu AI";
-    aiConfidence.textContent = valid && Number.isFinite(data.confidence)
-      ? Math.round(data.confidence*100) + "% (ước lượng)" : "--";
-    aiUpdated.textContent = valid && data.at ?
-      new Date(data.at).toLocaleTimeString("vi-VN",{hour12:false}) : "--";
-    lastAiAt = valid ? Date.now() : 0;
+    const fresh = ai && Number.isFinite(Number(ai.at)) &&
+      Math.abs(Date.now() - Number(ai.at)) <= STALE_MS;
+    const valid = fresh && ai.status === "ok" &&
+      typeof ai.levelCm === "number" && Number.isFinite(ai.levelCm) &&
+      ai.levelCm >= 0 && ai.levelCm <= 10;
+    aiLevel.textContent = valid ? ai.levelCm.toFixed(1) : "--";
+    aiStatus.textContent = fresh ? (labels[ai.status] || "Chưa có dữ liệu AI") : labels.offline;
+    aiConfidence.textContent = valid && Number.isFinite(ai.confidence) ?
+      Math.round(ai.confidence * 100) + "% (ước lượng)" : "--";
+    aiUpdated.textContent = valid ? new Date(ai.at).toLocaleTimeString("vi-VN", {hour12:false}) : "--";
   }
 
-  async function fetchTimed(url, opts={}, timeout=6000) {
-    const abort = new AbortController();
-    const timer = setTimeout(() => abort.abort(), timeout);
+  async function fetchTimed(url, timeout) {
+    const controller = new AbortController();
+    const watchdog = setTimeout(() => controller.abort(), timeout);
     try {
-      return await fetch(url, {...opts, signal: abort.signal, cache:"no-store"});
-    } finally {
-      clearTimeout(timer);
+      return await fetch(url, {signal:controller.signal, cache:"no-store",
+        headers:{"Cache-Control":"no-cache"}});
+    } finally { clearTimeout(watchdog); }
+  }
+
+  function schedule(ms=POLL_MS) {
+    if (timer !== null) clearTimeout(timer);
+    if (!stopped) timer = setTimeout(update, ms);
+  }
+
+  async function showFrame(frameKey, frameAt) {
+    const response = await fetchTimed(base + "/camera/latest.jpg?t=" + encodeURIComponent(frameKey), 7000);
+    if (!response.ok) throw Error("JPEG HTTP " + response.status);
+    const blob = await response.blob();
+    if (!blob.size || !blob.type.toLowerCase().includes("jpeg")) throw Error("Invalid JPEG");
+    const url = URL.createObjectURL(blob);
+    try {
+      const decoded = new Image();
+      decoded.src = url;
+      await decoded.decode();
+      image.src = url;
+      const previous = currentURL;
+      currentURL = url;
+      lastFrameKey = frameKey;
+      lastFrameAt = frameAt;
+      if (previous) URL.revokeObjectURL(previous);
+      updated.textContent = "Cập nhật: " +
+        new Date(frameAt).toLocaleTimeString("vi-VN", {hour12:false});
+    } catch (err) {
+      URL.revokeObjectURL(url);
+      throw err;
     }
   }
 
   async function update() {
-    if (ongoing || document.hidden || stopped) return;
-    ongoing = true;
+    if (working || stopped) return;
+    if (document.hidden) { schedule(1500); return; }
+    working = true;
     try {
-      // Independent status JSON; no database query or image decode required.
-      const stateResponse = await fetchTimed(base + "/camera/status", {}, 7000);
-      if (!stateResponse.ok) throw Error("Camera API HTTP " + stateResponse.status);
-      const state = await stateResponse.json();
-      if (state.online && state.lastFrameAt !== lastServerFrameAt) {
-        const response = await fetchTimed(base + "/camera/latest.jpg?t=" + Date.now(), {}, 8000);
-        if (!response.ok) throw Error("Image HTTP " + response.status);
-        const blob = await response.blob();
-        if (!blob.size || !blob.type.includes("jpeg")) throw Error("Invalid JPEG response");
-        const url = URL.createObjectURL(blob);
-        // Decode before replacing old image so broken JPEG cannot blank the view.
-        const testImage = new Image();
-        try {
-          testImage.src = url;
-          await testImage.decode();
-        } catch (err) {
-          URL.revokeObjectURL(url);
-          throw err;
-        }
-        const old = currentURL;
-        currentURL = url;
-        image.src = url;
-        if (old) URL.revokeObjectURL(old);
-        lastServerFrameAt = state.lastFrameAt;
-        lastFrameAt = Date.now();
-        updated.textContent = "Cập nhật: " + new Date(lastFrameAt).toLocaleTimeString("vi-VN",{hour12:false});
+      const res = await fetchTimed(base + "/camera/status?t=" + Date.now(), 5000);
+      if (!res.ok) throw Error("Camera status HTTP " + res.status);
+      const data = await res.json();
+      const online = data.online === true && Number.isFinite(Number(data.lastFrameAt)) &&
+        Date.now() - Number(data.lastFrameAt) < STALE_MS;
+      const key = data.seq != null ? String(data.seq) + "-" + String(data.lastFrameAt) :
+        String(data.lastFrameAt);
+      if (online && (forceRefresh || key !== lastFrameKey || !currentURL)) {
+        await showFrame(key, Number(data.lastFrameAt));
+        forceRefresh = false;
       }
-      if (state.online && currentURL) {
-        cameraState("live");
-      } else {
-        cameraState("waiting");
-      }
-      showAI(state.ai || {status:"offline"});
+      cameraState(online && currentURL ? "live" : "offline");
+      if (!online && !currentURL) placeholder.textContent = "Camera chưa truyền ảnh lên Backend";
+      showAI(data.ai);
     } catch (err) {
-      cameraState("waiting");
-      if (lastAiAt && Date.now()-lastAiAt>15000) showAI({status:"offline"});
-      if (!lastFrameAt) placeholder.textContent =
-        "Chưa nhận ảnh từ Backend (" + String(err.message || err) + "). Đang thử lại.";
-      console.warn("[FloodGuard camera] retry:", err.message || err);
+      cameraState("retry");
+      showAI({status:"offline"});
+      if (!currentURL) placeholder.textContent = "Chưa nhận ảnh từ Backend, đang thử lại";
+      console.warn("[FloodGuard camera] reconnect:", err);
     } finally {
-      ongoing = false;
+      working = false;
+      schedule();
     }
   }
 
-  cameraState("waiting");
-  showAI({status:"offline"});
-  setInterval(update, INTERVAL_MS);
+  function resume() {
+    // Browser BFCache restores the page without running scripts again.
+    stopped = false;
+    forceRefresh = true;
+    if (!working) schedule(0);
+  }
+
+  window.addEventListener("pageshow", resume);
   document.addEventListener("visibilitychange", () => {
-    if (!document.hidden) update();
+    if (!document.hidden) resume();
   });
+  window.addEventListener("focus", () => { if (!document.hidden) resume(); });
   window.addEventListener("pagehide", () => {
     stopped = true;
-    if (currentURL) URL.revokeObjectURL(currentURL);
+    if (timer !== null) { clearTimeout(timer); timer = null; }
+    // Keep current image and blob URL for BFCache restores.
   });
+  cameraState("offline");
+  showAI(null);
   update();
 })();
