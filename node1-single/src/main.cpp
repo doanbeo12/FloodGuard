@@ -35,6 +35,7 @@ String fault="";
 uint32_t lastBucket=0, previousTips=0, previousWind=0, lastSample=0;
 uint32_t aiAt=0, aiSeq=0, modeAt=0, offAt=0, lastWifiCheck=0;
 uint32_t modemSeq=0;
+bool latchedFault=false;
 float aiLevel=NAN, aiConfidence=0, jsnLevel=NAN, temp=NAN, humidity=NAN, pressure=NAN, windRpm=0;
 bool aiFlag=false, ahtOk=false, bmpOk=false, jsnOk=false, rainPlate=false, raining=false;
 uint32_t tipsNow=0,tipsSample=0,windNow=0;
@@ -52,7 +53,7 @@ void enter(PumpState next,const String& reason="") {
   offAt=millis();
   mode=next;
   modeAt=millis();
-  if(next==FAULT) fault=reason;
+  if(next==FAULT) {fault=reason; if(reason.endsWith("_TIMEOUT")) latchedFault=true;}
   Serial.printf("MODE=%s %s\n",modeName(mode),fault.c_str());
 }
 float readLevel() {
@@ -92,6 +93,13 @@ void onAi() {
          isfinite(conf)&&conf>=AI_MIN_CONFIDENCE&&conf<=1;
   api.send(200,"application/json",aiFlag?"{\"ok\":true}":"{\"ok\":false,\"reason\":\"invalid_ai\"}");
 }
+void onReset() {
+  if (!api.hasHeader("X-Node-Key") || api.header("X-Node-Key")!=String(NODE_AI_KEY)) {
+    api.send(401,"text/plain","unauthorized");return;
+  }
+  latchedFault=false;fault="";enter(WAIT);
+  api.send(200,"application/json","{\"ok\":true}");
+}
 void onStatus() {
   JsonDocument d;
   d["mode"]=modeName(mode);
@@ -129,6 +137,7 @@ void controlPumps(uint32_t now) {
   bool ready=aiFresh(now);
   bool unsafeJs = jsnOk && jsnLevel>=MAX_WATER_CM+0.5f;
   bool conflicting=ready && jsnOk && fabsf(jsnLevel-aiLevel)>3.0f;
+  if(latchedFault) {setPumps(false,false);return;}
   if(!ready || unsafeJs || conflicting){
     if(mode!=FAULT)enter(FAULT,!ready?"AI_STALE_OR_INVALID":unsafeJs?"JSN_HIGH":"SENSOR_CONFLICT");
     setPumps(false,false);return;
@@ -145,10 +154,14 @@ void controlPumps(uint32_t now) {
   }
   if(mode==FILL && (target!=FILL)){enter(WAIT);}
   if(mode==DRAIN && (target!=DRAIN)){enter(WAIT);}
-  if(mode==WAIT && (uint32_t)(now-offAt)<PUMP_DEADTIME_MS) {
+  if(mode==WAIT) {
+    if((uint32_t)(now-offAt)<PUMP_DEADTIME_MS){setPumps(false,false);return;}
+    if(target!=IDLE) enter(target);
+    else enter(IDLE);
+  } else if(mode!=target) {
+    enter(WAIT);
     setPumps(false,false);return;
   }
-  if(mode!=target) enter(target);
   setPumps(mode==FILL,mode==DRAIN);
 }
 
@@ -253,6 +266,7 @@ void setup() {
   api.collectHeaders(headers,1);
   api.on("/ai",HTTP_POST,onAi);
   api.on("/status",HTTP_GET,onStatus);
+  api.on("/reset",HTTP_POST,onReset);
   api.begin();
   modem.begin(SIM_BAUD,SERIAL_8N1,SIM_RX,SIM_TX);
   xTaskCreatePinnedToCore(modemTask,"lte",8192,nullptr,1,nullptr,0);
