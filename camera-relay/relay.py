@@ -174,10 +174,9 @@ def capture_worker(latest, stop):
                     if delay > 0 and stop.wait(delay):
                         return
                     next_capture = time.monotonic() + interval
-                    try:
-                        ok, frame = source.read()
-                        if not ok or frame is None:
-                            raise RuntimeError("Camera returned no image")
+                    ok, frame = source.read()
+                    if not ok or frame is None:
+                        raise RuntimeError("Camera returned no image")
                     errors = 0
                     ai = None
                     if detector:
