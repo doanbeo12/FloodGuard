@@ -7,9 +7,12 @@
 #define NODE_AI_KEY "SET_PRIVATE_LOCAL_AI_KEY"
 #define NODE_UPLOAD_KEY "SET_SAME_AS_RENDER_NODE1_UPLOAD_KEY"
 #define NODE_UPLOAD_URL "https://floodguard-backend-4dua.onrender.com/api/node1/telemetry"
+#define MQTT_HOST "broker.hivemq.com"
+#define MQTT_PORT 1883
+#define MQTT_TOPIC_NODE1 "flood-monitoring/floodguard-doanbeo12/node1-telemetry-v3"
 #define NODE_APN "m9-wintel" // From working Central v1.6.2; change if SIM is not Wintel
 #define ENABLE_PUMPS 0
-#define ENABLE_4G_UPLOAD 0 // Enable only after AT/HTTPS tests succeed
+#define ENABLE_4G_UPLOAD 0 // Set to 1 locally after MQTT AT connection tests
 #define MOSFET_ACTIVE_HIGH 1
 #define SIM_BAUD 9600 // MKE-M21 SIM7680C factory baud
 #define SIM_RX 18
