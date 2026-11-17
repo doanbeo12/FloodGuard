@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>FloodGuard – Giám sát ngập</title>
-  <link rel="stylesheet" href="css/node1.css?v=simforecast-1">
+  <link rel="stylesheet" href="css/node1.css?v=weathercards-2">
 </head>
 <body>
   <main class="wrap">
@@ -57,37 +57,17 @@
         <div class="sensor"><span>Kết nối Node</span><strong id="nodeUpdated">--</strong></div>
       </article>
     </section>
-    <section class="forecast-section" aria-label="Dự báo mô phỏng từ cảm biến">
-      <div class="forecast-heading">
-        <div><div class="overline">DỰ BÁO TỪ CẢM BIẾN</div><h2>Mưa và xu hướng mực nước</h2></div>
-        <span class="pill muted" id="forecastState">Đang chờ dữ liệu</span>
+    <section class="forecast-section" aria-label="Dự báo">
+      <div class="forecast-heading"><h2>Dự báo mưa và ngập trong 3 giờ tới</h2><span class="pill muted" id="forecastState">Đang cập nhật</span></div>
+      <div class="grid forecast-near">
+        <article class="card forecast-now"><div class="forecast-now-icon">🌧️</div><div><div class="label">DỰ BÁO MƯA</div><div class="forecast-now-value" id="forecastRain3h">--</div></div></article>
+        <article class="card forecast-now"><div class="forecast-now-icon">🌊</div><div><div class="label">NGUY CƠ NGẬP</div><div class="forecast-now-value" id="forecastFlood3h">--</div></div></article>
       </div>
-      <p class="forecast-note">Thử nghiệm mô phỏng: <strong>1 phút thực = 1 giờ mô phỏng</strong>. Không dùng API thời tiết hoặc dữ liệu triều bên ngoài. Chưa có cảm biến triều nên không dự báo triều.</p>
+      <div class="forecast-heading forecast-next-heading"><h2>Dự báo thời tiết</h2></div>
       <div class="grid forecast-grid">
-        <article class="card forecast-card"><div class="label">SAU 24 GIỜ MÔ PHỎNG</div>
-          <div class="forecast-outlook" id="forecast24">--</div>
-          <div class="meta"><span>Tương ứng</span><strong>24 phút thực</strong></div></article>
-        <article class="card forecast-card"><div class="label">SAU 48 GIỜ MÔ PHỎNG</div>
-          <div class="forecast-outlook" id="forecast48">--</div>
-          <div class="meta"><span>Tương ứng</span><strong>48 phút thực</strong></div></article>
-        <article class="card forecast-card"><div class="label">SAU 72 GIỜ MÔ PHỎNG</div>
-          <div class="forecast-outlook" id="forecast72">--</div>
-          <div class="meta"><span>Tương ứng</span><strong>72 phút thực</strong></div></article>
-      </div>
-      <div class="grid forecast-details">
-        <article class="card"><h2>Đánh giá nguy cơ mưa</h2>
-          <div class="sensor"><span>Trạng thái</span><strong id="forecastRainStatus">--</strong></div>
-          <div class="sensor"><span>Xu hướng áp suất</span><strong id="forecastPressure">--</strong></div>
-          <div class="sensor"><span>Xu hướng độ ẩm</span><strong id="forecastHumidity">--</strong></div>
-          <div class="sensor"><span>Dấu hiệu cảm biến</span><strong id="forecastSignals">--</strong></div>
-          <p class="forecast-small">Chưa thể xác định chính xác giờ bắt đầu mưa hoặc phần trăm xác suất khi chưa có mô hình kiểm định.</p>
-        </article>
-        <article class="card"><h2>Xu hướng mực nước</h2>
-          <div class="sensor"><span>AI hiện tại</span><strong id="forecastWaterLevel">--</strong></div>
-          <div class="sensor"><span>Xu hướng</span><strong id="forecastWaterTrend">--</strong></div>
-          <div class="sensor"><span>Số liệu đã thu</span><strong id="forecastHistory">--</strong></div>
-          <p class="forecast-small">Không ngoại suy số cm 24–72 giờ khi chưa có chu kỳ đo đủ dài. Các thẻ trên thể hiện đánh giá dấu hiệu mưa, không phải số đo triều.</p>
-        </article>
+        <article class="card weather-card"><div class="weather-day">24 giờ</div><div class="weather-icon" id="forecastIcon24">☁️</div><div class="weather-condition" id="forecast24">--</div><div class="weather-metrics"><span id="forecastTemp24">-- °C</span><span id="forecastHumidity24">-- %</span></div></article>
+        <article class="card weather-card"><div class="weather-day">48 giờ</div><div class="weather-icon" id="forecastIcon48">☁️</div><div class="weather-condition" id="forecast48">--</div><div class="weather-metrics"><span id="forecastTemp48">-- °C</span><span id="forecastHumidity48">-- %</span></div></article>
+        <article class="card weather-card"><div class="weather-day">64 giờ</div><div class="weather-icon" id="forecastIcon64">☁️</div><div class="weather-condition" id="forecast64">--</div><div class="weather-metrics"><span id="forecastTemp64">-- °C</span><span id="forecastHumidity64">-- %</span></div></article>
       </div>
     </section>
     <footer>FloodGuard • Node 1 · ESP32 · A7680C · Camera AI</footer>
@@ -95,6 +75,6 @@
   <script src="/config.js"></script>
   <script src="js/node1-dashboard.js?v=live-refresh-2"></script>
   <script src="js/camera-view.js?v=live-refresh-2"></script>
-  <script src="js/node1-forecast.js?v=simforecast-1"></script>
+  <script src="js/node1-forecast.js?v=weathercards-2"></script>
 </body>
 </html>
