@@ -124,6 +124,7 @@ async function start() {
   }
 
 require("./camera-http").attachCameraHttp(app);
+require("./node1-api").attachNode1Api(app);
   const httpServer = app.listen(PORT, () => {
     console.log("FloodGuard v2 Render API listening on port " + PORT);
 
