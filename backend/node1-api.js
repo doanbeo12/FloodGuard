@@ -3,6 +3,7 @@ const express = require("express");
 const crypto = require("crypto");
 const { pool } = require("./db");
 const mqtt = require("mqtt");
+const sensorForecast = require("./node1-forecast");
 
 const SAVE_MYSQL = String(process.env.NODE1_STORE_MYSQL || "false").toLowerCase() === "true";
 let tableReady = false;
@@ -66,6 +67,7 @@ function attachNode1Api(app) {
     const out=normalize(d);
     if(!out)return false;
     latest=out;lastAt=Date.now();accepted++;
+    sensorForecast.observe(out);
     if(SAVE_MYSQL) {
       // Keep UI responsive even if MySQL is temporarily unavailable.
       storeQueue=storeQueue.then(()=>storeTelemetry(out)).catch(err=>{
@@ -93,6 +95,10 @@ function attachNode1Api(app) {
     res.set({"Cache-Control":"no-store","Access-Control-Allow-Origin":"*"})
       .json({online,ageMs:latest?Date.now()-lastAt:null,node:online?latest:null,
         storage:SAVE_MYSQL?"mysql":"memory",transport:enabled?"mqtt":"https"});
+  });
+  app.get("/api/node1/forecast",(_req,res)=>{
+    res.set({"Cache-Control":"no-store","Access-Control-Allow-Origin":"*"})
+      .json(sensorForecast.forecast());
   });
   if(enabled){
     // MQTT public broker: topic isolation is NOT authentication. Telemetry only.
