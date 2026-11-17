@@ -714,6 +714,7 @@ app.get("/api/early-warning", async (req, res) => {
 });
 
 require("./camera-http").attachCameraHttp(app);
+require("./node1-api").attachNode1Api(app);
 const httpServer = app.listen(PORT, async () => {
     console.log(`Flood Monitoring API ${API_VERSION}: http://localhost:${PORT}`);
     try {
