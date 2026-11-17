@@ -30,13 +30,13 @@
       const n=live?d.nearTerm:null;
       const rainCode=n?.rainRisk||"INSUFFICIENT_DATA";
       const floodCode=n?.floodRisk||"INSUFFICIENT_DATA";
-      set("forecastState",!live?"Ngoại tuyến":d.ready?"Đang cập nhật":"Đang thu dữ liệu");
+      set("forecastState",!live?"Ngoại tuyến":d.reason==="MODEL_NOT_TRAINED"?"Chưa huấn luyện RF":d.ready?"Random Forest":"Đang thu dữ liệu");
       set("forecastRain3h",live?rainLabel[rainCode]:"Chưa có dữ liệu");
       set("forecastFlood3h",live?floodLabel[floodCode]:"Chưa có dữ liệu");
       for(const hours of [24,48,64]){
         const item=live?d.rain?.byHorizon?.find(x=>x.simHours===hours):null;
         set("forecast"+hours,item?.outlook||"Chưa có dữ liệu");
-        set("forecastIcon"+hours,item?iconFor(d.rain?.status):"☁️");
+        set("forecastIcon"+hours,item?iconFor(item.status):"☁️");
         // Do not invent future temperature or humidity forecasts.
         set("forecastTemp"+hours,"Nhiệt độ: --");
         set("forecastHumidity"+hours,"Độ ẩm: --");
