@@ -118,12 +118,12 @@ function forecast() {
   const model=randomForest.predict(records);
   const risk=p=>typeof p!=="number"?"INSUFFICIENT_DATA":
     p>=0.65?"HIGH":p>=0.35?"WATCH":"LOW";
-  const p=model.probabilities;
-  const rain3h=rainNow?"RAINING":risk(p.rain3);
-  const flood3h=risk(p.flood3);
+  const probabilities=model.probabilities;
+  const rain3h=rainNow?"RAINING":risk(probabilities.rain3);
+  const flood3h=risk(probabilities.flood3);
   rain.status=rain3h;
   rain.byHorizon=base.horizons.map(hours=>{
-    const prob=p["rain"+hours];
+    const prob=probabilities["rain"+hours];
     const level=risk(prob);
     return {simHours:hours,realMinutes:hours,status:level,
       outlook:level==="HIGH"?"Nguy cơ mưa cao":
@@ -134,7 +134,7 @@ function forecast() {
     floodRisk:flood3h,waterCm:finite(waterValue)?round(waterValue,2):null,
     waterTrend:water.status};
   const trained=model.modelsAvailable.length>0;
-  const hasResult=rainNow || Object.keys(p).length>0;
+  const hasResult=rainNow || Object.keys(probabilities).length>0;
   return {...base,ready:trained&&hasResult,
     reason:!trained?"MODEL_NOT_TRAINED":!hasResult?"INSUFFICIENT_FEATURES":null,
     rain,water,nearTerm,model:{
