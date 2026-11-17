@@ -1,265 +1,66 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="vi">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>FloodGuard - Giám sát, dự báo và cảnh báo ngập</title>
-  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.6.0/css/all.min.css">
-  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-  <link rel="stylesheet" href="css/style.css?v=camera-ai-1">
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>FloodGuard – Giám sát ngập</title>
+  <link rel="stylesheet" href="css/node1.css?v=1">
 </head>
 <body>
-<div class="container-fluid dashboard-shell">
-  <header class="dashboard-header">
-    <div>
-      <div class="eyebrow">FLOODGUARD • IOT FLOOD MONITORING</div>
-      <h1>HỆ THỐNG GIÁM SÁT, DỰ BÁO VÀ CẢNH BÁO SỚM NGẬP LỤT ĐÔ THỊ</h1>
-    </div>
-    <div class="header-status text-end">
-      <div id="clock" class="clock">--:--:--</div>
-      <div class="status-badges">
-        <span id="apiBadge" class="status-pill muted">Máy chủ: đang kiểm tra</span>
-        <span id="centralBadge" class="status-pill muted">Trạm trung tâm: --</span>
-        <span id="station1Badge" class="status-pill muted">Trạm mưa: --</span>
-        <span id="station2Badge" class="status-pill muted">Trạm triều: --</span>
-      </div>
-    </div>
-  </header>
+  <main class="wrap">
+    <header class="top">
+      <div><div class="overline">FLOODGUARD</div><h1>Giám sát mực nước và mưa</h1></div>
+      <div class="top-status"><span id="nodeBadge" class="pill muted">Node 1: Chưa kết nối</span><span id="cameraLiveBadge" class="pill muted">Camera ngoại tuyến</span></div>
+    </header>
 
-  <nav class="dashboard-nav">
-    <a class="dashboard-nav-link active" href="#realtimeSection"><i class="fa-solid fa-gauge-high"></i> Tổng quan</a>
-    <a class="dashboard-nav-link" href="#forecastSection"><i class="fa-solid fa-chart-line"></i> Dự báo</a>
-    <a class="dashboard-nav-link" href="#historySection"><i class="fa-solid fa-clock-rotate-left"></i> Lịch sử</a>
-    <a class="dashboard-nav-link" href="#statusSection"><i class="fa-solid fa-server"></i> Trạng thái</a>
-  </nav>
-
-  <main>
-    <section id="realtimeSection">
-      <div class="row g-4 mt-1">
-        <div class="col-xl-3 col-md-6">
-          <article class="dashboard-card">
-            <div class="card-header-custom">
-              <span><i class="fa-solid fa-road-water"></i> MỰC NƯỚC ĐƯỜNG</span>
-            </div>
-            <div class="node-value"><span id="roadLevel">--</span> <small>cm</small></div>
-            <div class="water-track"><div class="water-zone"></div><div id="roadMarker" class="water-marker"></div></div>
-            <div class="node-info">
-              <div><span>Xu hướng</span><strong id="roadTrend">--</strong></div>
-              <div><span>Cập nhật</span><strong id="roadUpdated">--</strong></div>
-            </div>
-          </article>
+    <section class="grid highlights">
+      <article class="card primary">
+        <div class="label">MỰC NƯỚC AI</div>
+        <div class="big"><span id="cameraAiLevel">--</span> <small>cm</small></div>
+        <div id="cameraAiStatus" class="sub">Đang chờ kết quả</div>
+        <div class="meta"><span>Độ tin cậy</span><strong id="cameraAiConfidence">--</strong></div>
+        <div class="meta"><span>Cập nhật</span><strong id="cameraAiUpdated">--</strong></div>
+      </article>
+      <article class="card">
+        <div class="label">TRẠNG THÁI MƯA</div>
+        <div class="big" id="rainState">--</div>
+        <div class="meta"><span>Gàu lật / mẫu</span><strong id="rainTips">--</strong></div>
+        <div class="meta"><span>Tổng số lần lật</span><strong id="rainTotal">--</strong></div>
+        <div class="meta"><span>Cảm biến mưa</span><strong id="rainPlate">--</strong></div>
+      </article>
+      <article class="card">
+        <div class="label">ĐIỀU KHIỂN BƠM</div>
+        <div class="pump-grid">
+          <div><span>BƠM CẤP</span><strong id="pumpIn">--</strong></div>
+          <div><span>BƠM HỒI</span><strong id="pumpOut">--</strong></div>
         </div>
+        <div class="meta"><span>Chế độ</span><strong id="pumpMode">--</strong></div>
+        <div id="pumpFault" class="fault"></div>
+      </article>
+    </section>
 
-        <div class="col-xl-3 col-md-6">
-          <article class="dashboard-card">
-            <div class="card-header-custom">
-              <span><i class="fa-solid fa-water"></i> MỰC TRIỀU</span>
-            </div>
-            <div class="node-value"><span id="tideLevel">--</span> <small>cm</small></div>
-            <div class="water-track tide-track"><div class="water-zone"></div><div id="tideMarker" class="water-marker"></div></div>
-            <div class="node-info">
-              <div><span>Xu hướng</span><strong id="tideTrend">--</strong></div>
-              <div><span>Cập nhật</span><strong id="tideUpdated">--</strong></div>
-            </div>
-          </article>
-        </div>
-
-        <div class="col-xl-3 col-md-6">
-          <article class="dashboard-card rain-card">
-            <div class="card-header-custom">
-              <span><i class="fa-solid fa-cloud-rain"></i> TRẠNG THÁI MƯA</span>
-              <span id="rainStateBadge" class="status-pill muted">--</span>
-            </div>
-            <div id="rainState" class="rain-state-value">--</div>
-            <div class="node-info">
-              <div><span>Lưu lượng</span><strong id="rainFlow">-- ml/s</strong></div>
-              <div><span>Nước / mẫu</span><strong id="rainVolume">-- ml</strong></div>
-              <div><span>Gàu / mẫu</span><strong id="tipsInterval">--</strong></div>
-              <div><span>Tổng gàu</span><strong id="tipsTotal">--</strong></div>
-            </div>
-          </article>
-        </div>
-
-        <div class="col-xl-3 col-md-6">
-          <article id="warningCard" class="dashboard-card warning-card normal">
-            <div class="card-header-custom">
-              <span><i class="fa-solid fa-triangle-exclamation"></i> CẢNH BÁO NGẬP</span>
-              <span id="floodTopBadge" class="status-pill muted">--</span>
-            </div>
-            <div id="warningLevel" class="warning-title">CHỜ DỮ LIỆU</div>
-            <div id="warningMessage" class="warning-message">Hệ thống đang chờ dữ liệu dự báo.</div>
-            <div class="warning-foot">
-              <span id="warningCause">Nguyên nhân: --</span>
-              <span id="warningConfidence">Tin cậy: --</span>
-            </div>
-          </article>
-        </div>
-      </div>
-
-      <section class="alert-panel alert-normal mt-4">
-        <div class="alert-icon"><i class="fa-solid fa-satellite-dish"></i></div>
-        <div class="alert-content">
-          <div class="alert-topline">
-            <div>
-              <div class="alert-kicker">TRẠNG THÁI HỆ THỐNG</div>
-            </div>
-          </div>
-          <div class="alert-detail-grid">
-            <div><span>Trạm mưa</span><strong id="station1Time">--</strong></div>
-            <div><span>Trạm triều</span><strong id="station2Time">--</strong></div>
-            <div><span>Trạm trung tâm</span><strong id="centralStatus">--</strong></div>
-            <div><span>Lưu gần nhất</span><strong id="lastSave">--</strong></div>
-          </div>
-        </div>
-      </section>
-
-      <section class="dashboard-box mt-4" id="cameraSection">
-        <div class="box-title d-flex align-items-center justify-content-between">
-          <span><i class="fa-solid fa-video"></i> Camera giám sát ngập</span>
-          <span id="cameraLiveBadge" class="status-pill muted">Camera ngoại tuyến</span>
-        </div>
+    <section class="grid content">
+      <article class="card camera-card">
+        <div class="section-head"><h2>Camera quan sát</h2><span id="cameraLastFrame" class="hint">--</span></div>
         <div class="camera-video-frame">
-          <img id="cameraLiveImage" alt="Video trực tiếp ESP32-S3-CAM" style="display:none" />
-          <div id="cameraOfflineText" class="camera-offline-note">Chưa nhận video từ laptop. Hãy chạy camera-relay.</div>
+          <img id="cameraLiveImage" alt="Camera FloodGuard" style="display:none">
+          <div id="cameraOfflineText" class="camera-offline-note">Chờ ảnh từ camera...</div>
         </div>
-        <div class="camera-video-footer">ESP32-S3-CAM • Ảnh JPEG từ laptop • <span id="cameraLastFrame">Chưa có khung hình</span></div>
-        <div class="camera-ai-panel" aria-live="polite">
-          <div class="camera-ai-main">
-            <div class="camera-ai-label">MỰC NƯỚC CAMERA AI <span class="camera-ai-tag">Thử nghiệm • 0–10 cm</span></div>
-            <div class="camera-ai-value"><strong id="cameraAiLevel">--</strong><span>cm</span></div>
-          </div>
-          <div class="camera-ai-details">
-            <div><span>Trạng thái</span><strong id="cameraAiStatus">Chờ kết quả từ laptop</strong></div>
-            <div><span>Độ tin cậy thuật toán</span><strong id="cameraAiConfidence">--</strong></div>
-            <div><span>Cập nhật</span><strong id="cameraAiUpdated">--</strong></div>
-          </div>
-          <small class="camera-ai-note">Số đo thị giác thử nghiệm, chưa dùng để tự động kích hoạt cảnh báo ngập. Cần hiệu chuẩn bằng thước thực tế.</small>
-        </div>
-      </section>
-
-      <section class="dashboard-box mt-4">
-        <div class="box-title"><i class="fa-solid fa-cloud-sun"></i> Điều kiện môi trường tại trạm mưa và ngập đường</div>
-        <div class="sensor-grid">
-          <div class="sensor-metric"><span>Nhiệt độ</span><strong id="temperature">-- °C</strong><small id="temperatureTrend">Xu hướng: --</small></div>
-          <div class="sensor-metric"><span>Độ ẩm</span><strong id="humidity">-- %</strong><small id="humidityTrend">Xu hướng: --</small></div>
-          <div class="sensor-metric"><span>Áp suất</span><strong id="pressure">-- hPa</strong><small id="pressureTrend">Xu hướng: --</small></div>
-          <div class="sensor-metric"><span>Chênh lệch điểm sương</span><strong id="dewSpread">-- °C</strong><small id="dewTrend">Xu hướng: --</small></div>
-          <div class="sensor-metric"><span>Tốc độ quay cốc gió</span><strong id="windRpm">-- RPM</strong><small id="windTrend">Xu hướng: --</small></div>
-          <div class="sensor-metric"><span>Cảm biến mưa</span><strong id="rainSensor">--</strong></div>
-        </div>
-      </section>
+      </article>
+      <article class="card env-card">
+        <div class="section-head"><h2>Cảm biến môi trường</h2></div>
+        <div class="sensor"><span>Nhiệt độ</span><strong id="temperature">-- °C</strong></div>
+        <div class="sensor"><span>Độ ẩm</span><strong id="humidity">-- %</strong></div>
+        <div class="sensor"><span>Áp suất</span><strong id="pressure">-- hPa</strong></div>
+        <div class="sensor"><span>Tốc độ gió</span><strong id="windRpm">-- RPM</strong></div>
+        <div class="sensor"><span>Mực nước JSN (phụ trợ)</span><strong id="jsnLevel">-- cm</strong></div>
+        <div class="sensor"><span>Kết nối Node</span><strong id="nodeUpdated">--</strong></div>
+      </article>
     </section>
-
-    <section id="forecastSection" class="mt-4">
-      <div class="row g-4">
-        <div class="col-xl-4">
-          <article class="dashboard-card forecast-card h-100">
-            <div class="card-header-custom">
-              <span><i class="fa-solid fa-cloud-showers-heavy"></i> DỰ BÁO MƯA</span>
-              <span id="rainRiskBadge" class="status-pill muted">--</span>
-            </div>
-            <div class="forecast-hero">
-              <div>
-                <div class="node-label">Điểm nguy cơ</div>
-                <div class="node-value"><span id="rainScore">--</span> <small>/100</small></div>
-              </div>
-              <div class="forecast-time-box"><span>Thời điểm dự kiến</span><strong id="rainOnset">--</strong></div>
-            </div>
-            <div class="node-info compact">
-              <div><span>Độ tin cậy</span><strong id="rainConfidence">--</strong></div>
-              <div><span>Trạng thái</span><strong id="rainForecastStatus">--</strong></div>
-            </div>
-            <div id="rainNoData" class="forecast-notice d-none">Chưa đủ dữ liệu môi trường để dự báo mưa.</div>
-          </article>
-        </div>
-
-        <div class="col-xl-4">
-          <article class="dashboard-card forecast-card h-100">
-            <div class="card-header-custom">
-              <span><i class="fa-solid fa-water"></i> DỰ BÁO TRIỀU</span>
-              <span id="tideConfidenceBadge" class="status-pill muted">--</span>
-            </div>
-            <div id="tideForecastRows" class="forecast-rows">
-              <div><span>1 giờ</span><strong>-- cm</strong><em>--</em></div>
-              <div><span>2 giờ</span><strong>-- cm</strong><em>--</em></div>
-              <div><span>3 giờ</span><strong>-- cm</strong><em>--</em></div>
-            </div>
-            <div id="tideCycleInfo" class="forecast-notice">Chu kỳ học được: --</div>
-            <div id="tideNoData" class="forecast-notice d-none">Chưa đủ lịch sử mực triều để tạo dự báo.</div>
-          </article>
-        </div>
-
-        <div class="col-xl-4">
-          <article class="dashboard-card forecast-card h-100">
-            <div class="card-header-custom">
-              <span><i class="fa-solid fa-house-flood-water"></i> DỰ BÁO NGẬP</span>
-              <span id="floodBadge" class="status-pill muted">--</span>
-            </div>
-            <div id="floodForecastRows" class="forecast-rows">
-              <div><span>1 giờ</span><strong>-- cm</strong><em>--</em></div>
-              <div><span>2 giờ</span><strong>-- cm</strong><em>--</em></div>
-              <div><span>3 giờ</span><strong>-- cm</strong><em>--</em></div>
-            </div>
-            <div id="earlyWarningText" class="forecast-notice">Cảnh báo sớm: --</div>
-            <div id="floodNoData" class="forecast-notice d-none">Chưa đủ dữ liệu mực nước đường để dự báo ngập.</div>
-          </article>
-        </div>
-      </div>
-    </section>
-
-    <section id="historySection" class="mt-4">
-      <div class="row g-4">
-        <div class="col-xl-9">
-          <section class="dashboard-box h-100">
-            <div class="box-title"><i class="fa-solid fa-chart-line"></i> Biểu đồ mực nước gần đây</div>
-            <div class="chart-container"><canvas id="waterChart"></canvas></div>
-            <div class="threshold-legend">
-              <span><b>4 cm</b> Theo dõi</span>
-              <span><b>8 cm</b> Cảnh báo</span>
-              <span><b>12 cm</b> Nguy hiểm</span>
-              <span><b>0–16 cm</b> Thang mô hình</span>
-            </div>
-          </section>
-        </div>
-        <div class="col-xl-3">
-          <section class="dashboard-card h-100 history-control-card">
-            <div class="card-header-custom"><span><i class="fa-solid fa-clock-rotate-left"></i> LỊCH SỬ</span></div>
-            <button id="refreshBtn" class="btn btn-primary w-100"><i class="fa-solid fa-rotate"></i> Làm mới ngay</button>
-            <div id="deviceHistoryList" class="mt-3" aria-live="polite" style="max-height:370px;overflow-y:auto">
-              <div class="small text-muted">Đang tải lịch sử thiết bị...</div>
-            </div>
-          </section>
-        </div>
-      </div>
-    </section>
-
-    <section id="statusSection" class="dashboard-box mt-4">
-      <div class="box-title"><i class="fa-solid fa-server"></i> Trạng thái dữ liệu và thiết bị</div>
-      <div class="table-responsive">
-        <table class="table align-middle mb-0 status-table">
-          <thead><tr><th>Thành phần</th><th>Trạng thái / thời gian</th></tr></thead>
-          <tbody>
-            <tr><td>Trạm mưa và ngập đường</td><td id="station1StatusTable">--</td></tr>
-            <tr><td>Trạm triều</td><td id="station2StatusTable">--</td></tr>
-            <tr><td>Trạm trung tâm</td><td id="centralStatusTable">--</td></tr>
-            <tr><td>Máy chủ / cơ sở dữ liệu</td><td id="serverStatusTable">--</td></tr>
-          </tbody>
-        </table>
-      </div>
-    </section>
-
-    <section class="dashboard-box mt-4">
-      <button id="rainDemoBtn" class="btn btn-outline-primary w-100" type="button">
-        <i class="fa-solid fa-cloud-rain"></i> Điều kiện có lợi cho mưa: TẮT
-      </button>
-    </section>
+    <footer>FloodGuard • Node 1 · ESP32 · A7680C · Camera AI</footer>
   </main>
-
-  <footer class="dashboard-footer">FloodGuard</footer>
-</div>
-<script src="/config.js"></script>
-<script src="js/dashboard.js"></script>
-<script src="js/camera-view.js?v=camera-http-2"></script>
+  <script src="/config.js"></script>
+  <script src="js/node1-dashboard.js?v=1"></script>
+  <script src="js/camera-view.js?v=camera-http-2"></script>
 </body>
 </html>
