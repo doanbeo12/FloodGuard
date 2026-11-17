@@ -367,7 +367,8 @@ bool send4G(const String& body) {
   return ok;
 }
 void modemTask(void*) {
-  vTaskDelay(pdMS_TO_TICKS(1500)); // allow SIM UART to settle after boot
+  Serial.println("[LTE] Waiting 12s for SIM7680C startup");
+  vTaskDelay(pdMS_TO_TICKS(12000)); // allow modem/PWRKEY to finish boot
   for(;;){
     if(ENABLE_4G_UPLOAD) {
       if(!networkReady){
