@@ -291,7 +291,7 @@ bool send4G(const String& body) {
   ok=ok && command("AT+CSSLCFG=\"sslversion\",0,3","OK",3000);
   ok=ok && command("AT+CSSLCFG=\"enableSNI\",0,1","OK",3000);
   ok=ok && command("AT+HTTPPARA=\"SSLCFG\",0","OK",3000);
-  ok=ok && command("AT+HTTPPARA=\"CID\",1","OK",3000);
+  // SIM7680C MKE-M21 responds ERROR to HTTPPARA CID; APN is configured via CGDCONT.
   ok=ok && command("AT+HTTPPARA=\"URL\",\""+String(NODE_UPLOAD_URL)+"\"","OK",4000);
   ok=ok && command("AT+HTTPPARA=\"CONTENT\",\"application/json\"","OK",3000);
   ok=ok && command("AT+HTTPPARA=\"USERDATA\",\"X-Node-Key: "+String(NODE_UPLOAD_KEY)+"\"","OK",3000);
