@@ -31,6 +31,8 @@ MAX_FRAME_BYTES = 180 * 1024  # Must match backend/camera-relay.js
 AI_ENABLED = os.getenv("CAMERA_AI_ENABLED", "0") == "1"
 TRANSPORT = os.getenv("CAMERA_TRANSPORT", "http").lower()
 HTTP_BASE = os.getenv("CAMERA_HTTP_BASE", RELAY_URL.replace("wss://", "https://").replace("ws://", "http://").split("/camera/")[0]).rstrip("/")
+NODE1_URL = os.getenv("NODE1_URL", "").rstrip("/")
+NODE1_AI_KEY = os.getenv("NODE1_AI_KEY", "")
 
 
 class CameraListener(ServiceListener):
@@ -221,6 +223,84 @@ def capture_worker(latest, stop):
                 return
 
 
+
+def discover_node1():
+    if NODE1_URL:
+        return NODE1_URL
+    try:
+        addr = socket.gethostbyname("floodguard-node1.local")
+        return f"http://{addr}"
+    except OSError:
+        pass
+    class NodeListener(ServiceListener):
+        def __init__(self):
+            self.ip = None
+        def add_service(self, zc, typ, name):
+            info = zc.get_service_info(typ, name, timeout=800)
+            if info and (info.server or "").rstrip(".").lower() == "floodguard-node1.local":
+                for addr in info.parsed_addresses():
+                    try:
+                        socket.inet_pton(socket.AF_INET, addr)
+                        self.ip = addr
+                        return
+                    except OSError:
+                        continue
+        def update_service(self, zc, typ, name):
+            self.add_service(zc, typ, name)
+        def remove_service(self, zc, typ, name):
+            pass
+    with Zeroconf() as zc:
+        listener = NodeListener()
+        browser = ServiceBrowser(zc, "_http._tcp.local.", listener)
+        end = time.monotonic() + 3
+        while time.monotonic() < end and not listener.ip:
+            time.sleep(0.1)
+        browser.cancel()
+        if listener.ip:
+            return f"http://{listener.ip}"
+    raise RuntimeError("Node1 not found on LAN; set NODE1_URL to its IP")
+
+
+def node1_ai_sender(latest, stop):
+    if not NODE1_AI_KEY or NODE1_AI_KEY == "SET_PRIVATE_LOCAL_AI_KEY":
+        print("NODE1_AI_KEY not set; local AI forwarding disabled", flush=True)
+        return
+    session = requests.Session()
+    session.headers.update({"X-Node-Key": NODE1_AI_KEY})
+    last_seq = 0
+    url = None
+    while not stop.is_set():
+        item = latest.newer(last_seq, timeout=3)
+        if item is None:
+            continue
+        seq, jpeg, ai = item
+        last_seq = seq
+        if ai is None:
+            continue
+        if not url:
+            try:
+                url = discover_node1() + "/ai"
+                print("Node1 AI endpoint:", url, flush=True)
+            except Exception as exc:
+                print("Node1 discovery:", exc, flush=True)
+                stop.wait(2)
+                continue
+        data = {
+            "seq": int(time.time() * 1000) & 0xFFFFFFFF,
+            "valid": ai.get("status") == "ok",
+            "level_cm": ai.get("levelCm"),
+            "confidence": ai.get("confidence")
+        }
+        try:
+            response = session.post(url, json=data, timeout=(2, 3))
+            response.raise_for_status()
+        except requests.RequestException as exc:
+            print("Node1 AI upload:", exc, flush=True)
+            url = None
+            stop.wait(1)
+    session.close()
+
+
 def http_sender(latest, stop):
     """Send JPEG over HTTPS rather than a long-running WebSocket.
 
@@ -315,6 +395,8 @@ def run():
     stop=threading.Event()
     camera_thread=threading.Thread(target=capture_worker,args=(latest,stop),daemon=True)
     camera_thread.start()
+    node_thread=threading.Thread(target=node1_ai_sender,args=(latest,stop),daemon=True)
+    node_thread.start()
     try:
         if TRANSPORT=="http":
             http_sender(latest,stop)
@@ -325,6 +407,7 @@ def run():
     finally:
         stop.set()
         camera_thread.join(timeout=2)
+        node_thread.join(timeout=2)
 
 
 if __name__=="__main__":
