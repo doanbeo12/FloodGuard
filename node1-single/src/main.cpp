@@ -325,75 +325,105 @@ bool waitHttpAction(int &status, int &sizeBytes, uint32_t timeoutMs) {
   Serial.println("[LTE] HTTPACTION URC timeout");
   return false;
 }
-bool send4G(const String& body) {
-  // HTTPTERM may answer ERROR when HTTP has not been initialized.
-  // This is expected and must not be treated as modem failure.
-  command("AT+HTTPTERM","OK",1200);
-  if(!command("AT+HTTPINIT","OK",10000))return false;
+// SIM7680C MQTT AT workflow adapted from verified Central v1.6.2.
+// One modemTask owns UART2. Do not use HTTP/TLS for telemetry.
+bool mqttConnected=false;
+uint8_t mqttFails=0;
 
-  bool ok=true;
-  // Render hosts several HTTPS domains on the same server: SNI is required.
-  // Force TLS 1.2; do not silently downgrade to insecure HTTP.
-  ok=ok && command("AT+CSSLCFG=\"sslversion\",0,3","OK",3000);
-  ok=ok && command("AT+CSSLCFG=\"enableSNI\",0,1","OK",3000);
-  ok=ok && command("AT+HTTPPARA=\"SSLCFG\",0","OK",3000);
-  // SIM7680C MKE-M21 responds ERROR to HTTPPARA CID; APN is configured via CGDCONT.
-  ok=ok && command("AT+HTTPPARA=\"URL\",\""+String(NODE_UPLOAD_URL)+"\"","OK",4000);
-  ok=ok && command("AT+HTTPPARA=\"CONTENT\",\"application/json\"","OK",3000);
-  ok=ok && command("AT+HTTPPARA=\"USERDATA\",\"X-Node-Key: "+String(NODE_UPLOAD_KEY)+"\"","OK",3000);
-  if(ok){
-    while(modem.available())modem.read();
-    modem.printf("AT+HTTPDATA=%u,10000\r\n",(unsigned)body.length());
-    ok=waitModem("DOWNLOAD",8000);
-    if(ok){
-      modem.print(body);
-      String response;
-      ok=waitModem("OK",15000,&response);
-      if(!ok)Serial.printf("[LTE] HTTPDATA failed: %s\n",response.c_str());
-    }else Serial.println("[LTE] HTTPDATA: DOWNLOAD timeout");
-  }
-  if(ok){
-    while(modem.available())modem.read();
-    modem.println("AT+HTTPACTION=1");
-    int code=-1, replyLen=-1;
-    ok=waitHttpAction(code,replyLen,45000);
-    if(ok){
-      Serial.printf("[LTE] HTTPACTION status=%d, responseBytes=%d\n",code,replyLen);
-      if(code==715)Serial.println("[LTE] Modem TLS handshake failure (715)");
-      ok=code>=200 && code<300;
+bool waitMqttUrc(const String &prefix, uint32_t timeout) {
+  String line;
+  uint32_t start=millis();
+  while((uint32_t)(millis()-start)<timeout){
+    while(modem.available()){
+      char c=(char)modem.read();
+      if(c=='\r')continue;
+      if(c!='\n'){if(line.length()<300)line+=c;else line="";continue;}
+      line.trim();
+      if(line.startsWith(prefix)){
+        Serial.printf("[MQTT] %s\n",line.c_str());
+        return line.endsWith(": 0") || line.endsWith(",0") || line.endsWith(":0");
+      }
+      if(line.startsWith("+CME ERROR") || line=="ERROR"){
+        Serial.printf("[MQTT] error: %s\n",line.c_str());return false;
+      }
+      line="";
     }
+    vTaskDelay(pdMS_TO_TICKS(5));
   }
-  command("AT+HTTPTERM","OK",3000);
-  return ok;
+  Serial.printf("[MQTT] timeout waiting for %s\n",prefix.c_str());
+  return false;
+}
+
+void mqttCleanup() {
+  // Stop only on reconnect, never on a single transient publish failure.
+  command("AT+CMQTTDISC=0,5","+CMQTTDISC: 0,0",1200);
+  command("AT+CMQTTREL=0","OK",1000);
+  command("AT+CMQTTSTOP","+CMQTTSTOP: 0",3000);
+  mqttConnected=false;
+}
+bool mqttConnect() {
+  Serial.println("[MQTT] Connecting over Wintel LTE");
+  mqttCleanup();
+  while(modem.available())modem.read();
+  modem.println("AT+CMQTTSTART");
+  if(!waitMqttUrc("+CMQTTSTART:",9000))return false;
+
+  char id[48];
+  uint64_t mac=ESP.getEfuseMac();
+  snprintf(id,sizeof(id),"FGN1_%04X%08X",(unsigned)(mac>>32),(unsigned)(mac&0xffffffff));
+  if(!command(String("AT+CMQTTACCQ=0,\"")+id+"\",0","OK",3000))return false;
+  String uri=String("tcp://")+MQTT_HOST+":"+String(MQTT_PORT);
+  while(modem.available())modem.read();
+  modem.println(String("AT+CMQTTCONNECT=0,\"")+uri+"\",20,1");
+  if(!waitMqttUrc("+CMQTTCONNECT:",25000))return false;
+  mqttConnected=true;mqttFails=0;
+  Serial.printf("[MQTT] Connected: %s\n",uri.c_str());
+  return true;
+}
+bool mqttPublish(const String& body) {
+  if(!mqttConnected)return false;
+  const String topic=MQTT_TOPIC_NODE1;
+  // Handle prompt and write exact byte length, as in Central v1.6.2.
+  if(!command(String("AT+CMQTTTOPIC=0,")+topic.length(),">",5000))return false;
+  modem.write((const uint8_t*)topic.c_str(),topic.length());
+  modem.flush();
+  if(!waitModem("OK",5000))return false;
+  if(!command(String("AT+CMQTTPAYLOAD=0,")+body.length(),">",5000))return false;
+  modem.write((const uint8_t*)body.c_str(),body.length());
+  modem.flush();
+  if(!waitModem("OK",7000))return false;
+  while(modem.available())modem.read();
+  modem.println("AT+CMQTTPUB=0,0,10"); // QoS 0; don't publish retained telemetry
+  return waitMqttUrc("+CMQTTPUB:",15000);
 }
 void modemTask(void*) {
   Serial.println("[LTE] Waiting 12s for SIM7680C startup");
-  vTaskDelay(pdMS_TO_TICKS(12000)); // allow modem/PWRKEY to finish boot
+  vTaskDelay(pdMS_TO_TICKS(12000));
   for(;;){
     if(ENABLE_4G_UPLOAD) {
       if(!networkReady){
+        mqttConnected=false;
         Serial.println("[LTE] Initialize / reconnect Wintel data session");
         networkReady=prepareNetwork();
-        failedUploads=0;
       }
-      if(networkReady){
-        // Check registration every 30 seconds, not on every HTTP POST.
+      if(networkReady) {
         if((uint32_t)(millis()-lastNetworkCheck)>=SIM_NETWORK_CHECK_MS){
           lastNetworkCheck=millis();
           if(!queryRegistration()){
-            Serial.println("[LTE] Registration lost, reconnecting");
-            networkReady=false;
+            networkReady=false;mqttConnected=false;
+            Serial.println("[LTE] Registration lost");
           }
         }
       }
-      if(networkReady){
+      if(networkReady && !mqttConnected)mqttConnect();
+      if(networkReady && mqttConnected){
         String body=payload();
-        bool result=send4G(body);
-        Serial.printf("Node1 -> Render: %s, seq=%lu\n",result?"OK":"FAILED",(unsigned long)modemSeq);
-        if(result)failedUploads=0;
-        else if(++failedUploads>=3) {
-          Serial.println("[LTE] 3 upload failures; refresh network state");
-          networkReady=false;
+        bool ok=mqttPublish(body);
+        Serial.printf("Node1 -> MQTT: %s, seq=%lu\n",ok?"OK":"FAILED",(unsigned long)modemSeq);
+        if(ok)mqttFails=0;
+        else if(++mqttFails>=3){
+          mqttFails=0;mqttConnected=false;
+          Serial.println("[MQTT] 3 publish failures, reconnect next cycle");
         }
       }
     }
