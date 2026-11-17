@@ -118,7 +118,9 @@ void sampleSensors(uint32_t now) {
   tipsSample=b-previousTips;
   previousTips=b;
   raining=lastBucket && ((uint32_t)(now-lastBucket)<RAIN_STOP_MS);
-  windRpm=(w-previousWind)*60000.0f/max(1UL,now-lastSample);
+  uint32_t dt=now-lastSample;
+  if(dt==0)dt=1;
+  windRpm=(w-previousWind)*60000.0f/dt;
   previousWind=w;
   windNow=w;
   rainPlate=(digitalRead(RAIN_PLATE_PIN)==LOW);
@@ -165,16 +167,30 @@ void controlPumps(uint32_t now) {
   setPumps(mode==FILL,mode==DRAIN);
 }
 
+// LTE management ported from Central v1.6.2: check SIM/registration before HTTP.
+// Run ALL AT commands only in modemTask (UART2 has one owner).
+bool networkReady=false;
+uint32_t lastNetworkCheck=0;
+uint8_t failedUploads=0;
+
 bool waitModem(const char* expected,uint32_t timeout,String* response=nullptr) {
-  String buff;uint32_t start=millis();
+  String buff;
+  uint32_t start=millis();
   while((uint32_t)(millis()-start)<timeout){
     while(modem.available()){
-      char ch=modem.read();
-      if(buff.length()<1600)buff+=ch;else buff.remove(0,500);
-      if(buff.indexOf(expected)>=0){if(response)*response=buff;return true;}
-      if(buff.indexOf("\r\nERROR")>=0){if(response)*response=buff;return false;}
+      char ch=(char)modem.read();
+      if(buff.length()<2000) buff+=ch; else buff.remove(0,500);
+      if(buff.indexOf(expected)>=0) {
+        if(response)*response=buff;
+        return true;
+      }
+      if(buff.indexOf("\r\nERROR")>=0 || buff.indexOf("+CME ERROR:")>=0 ||
+         buff.indexOf("+CMS ERROR:")>=0) {
+        if(response)*response=buff;
+        return false;
+      }
     }
-    vTaskDelay(pdMS_TO_TICKS(10));
+    vTaskDelay(pdMS_TO_TICKS(5));
   }
   if(response)*response=buff;
   return false;
@@ -182,8 +198,67 @@ bool waitModem(const char* expected,uint32_t timeout,String* response=nullptr) {
 bool command(const String &cmd,const char* expect="OK",uint32_t ms=3000){
   while(modem.available())modem.read();
   modem.println(cmd);
-  return waitModem(expect,ms);
+  String answer;
+  bool ok=waitModem(expect,ms,&answer);
+  // Never log HTTPPARA USERDATA: it contains the secret API key.
+  const bool secret=cmd.indexOf("USERDATA")>=0;
+  Serial.printf("[SIM] %s : %s\n",secret?"HTTP USERDATA (hidden)":cmd.c_str(),
+                ok?"OK":"FAILED");
+  if(!ok && !answer.isEmpty()) {
+    answer.trim();
+    Serial.printf("[SIM] response: %s\n",answer.c_str());
+  }
+  return ok;
 }
+bool registrationOk(const String& res) {
+  int p=res.indexOf("+CEREG:");
+  if(p<0)return false;
+  int end=res.indexOf('\n',p);
+  String row=res.substring(p,end<0?res.length():end);
+  row.trim();
+  // +CEREG: <n>,<stat> OR +CEREG: <stat>
+  int col=row.indexOf(':');
+  int comma=row.indexOf(',',col+1);
+  String stat=comma>=0?row.substring(comma+1):row.substring(col+1);
+  stat.trim();
+  return stat.startsWith("1") || stat.startsWith("5");
+}
+bool queryRegistration() {
+  while(modem.available())modem.read();
+  modem.println("AT+CEREG?");
+  String res;
+  bool ok=waitModem("OK",2000,&res);
+  Serial.printf("[LTE] CEREG: %s\n",ok?res.c_str():"no response");
+  return ok && registrationOk(res);
+}
+bool prepareNetwork() {
+  bool responding=false;
+  for(int i=0;i<3;i++){
+    if(command("AT","OK",1200)){responding=true;break;}
+    vTaskDelay(pdMS_TO_TICKS(250));
+  }
+  if(!responding)return false;
+  command("ATE0","OK",1500);
+  // CPIN MUST be READY. This prevents HTTP failures with an inactive SIM.
+  if(!command("AT+CPIN?","READY",2000))return false;
+  String apn=String("AT+CGDCONT=1,\"IP\",\"")+NODE_APN+"\"";
+  if(!command(apn,"OK",3000))return false;
+  // Same registration/attachment strategy as working Central project.
+  command("AT+CGATT=1","OK",8000);
+  uint32_t started=millis();
+  while((uint32_t)(millis()-started)<SIM_REGISTER_WAIT_MS){
+    if(queryRegistration()){
+      command("AT+CSQ","OK",1500);
+      lastNetworkCheck=millis();
+      Serial.println("[LTE] Registered, APN ready");
+      return true;
+    }
+    vTaskDelay(pdMS_TO_TICKS(1000));
+  }
+  Serial.println("[LTE] Registration timed out");
+  return false;
+}
+
 String payload() {
   JsonDocument d;
   xSemaphoreTake(sensorLock,portMAX_DELAY);
@@ -205,44 +280,80 @@ String payload() {
   String out;serializeJson(d,out);return out;
 }
 bool send4G(const String& body) {
-  if(!command("AT")) return false;
-  command("AT+HTTPTERM","OK",1000);
-  if(!command("AT+CGDCONT=1,\"IP\",\""+String(NODE_APN)+"\""))return false;
-  if(!command("AT+HTTPINIT","OK",15000))return false;
-  bool ok=command("AT+HTTPPARA=\"URL\",\""+String(NODE_UPLOAD_URL)+"\"") &&
-    command("AT+HTTPPARA=\"CONTENT\",\"application/json\"") &&
-    command("AT+HTTPPARA=\"USERDATA\",\"X-Node-Key: "+String(NODE_UPLOAD_KEY)+"\"");
+  // HTTPTERM may answer ERROR when HTTP has not been initialized.
+  // This is expected and must not be treated as modem failure.
+  command("AT+HTTPTERM","OK",1200);
+  if(!command("AT+HTTPINIT","OK",10000))return false;
+
+  bool ok=true;
+  // Render hosts several HTTPS domains on the same server: SNI is required.
+  // Force TLS 1.2; do not silently downgrade to insecure HTTP.
+  ok=ok && command("AT+CSSLCFG=\"sslversion\",0,3","OK",3000);
+  ok=ok && command("AT+CSSLCFG=\"enableSNI\",0,1","OK",3000);
+  ok=ok && command("AT+HTTPPARA=\"SSLCFG\",0","OK",3000);
+  ok=ok && command("AT+HTTPPARA=\"CID\",1","OK",3000);
+  ok=ok && command("AT+HTTPPARA=\"URL\",\""+String(NODE_UPLOAD_URL)+"\"","OK",4000);
+  ok=ok && command("AT+HTTPPARA=\"CONTENT\",\"application/json\"","OK",3000);
+  ok=ok && command("AT+HTTPPARA=\"USERDATA\",\"X-Node-Key: "+String(NODE_UPLOAD_KEY)+"\"","OK",3000);
   if(ok){
     while(modem.available())modem.read();
     modem.printf("AT+HTTPDATA=%u,10000\r\n",(unsigned)body.length());
-    ok=waitModem("DOWNLOAD",6000);
+    ok=waitModem("DOWNLOAD",8000);
     if(ok){
       modem.print(body);
-      ok=waitModem("OK",12000);
-    }
+      String response;
+      ok=waitModem("OK",15000,&response);
+      if(!ok)Serial.printf("[LTE] HTTPDATA failed: %s\n",response.c_str());
+    }else Serial.println("[LTE] HTTPDATA: DOWNLOAD timeout");
   }
   if(ok){
     while(modem.available())modem.read();
     modem.println("AT+HTTPACTION=1");
     String result;
-    ok=waitModem("+HTTPACTION:",25000,&result);
+    ok=waitModem("+HTTPACTION:",45000,&result);
     if(ok){
-      int idx=result.indexOf("+HTTPACTION:");
-      int comma=result.indexOf(',',idx);
-      int code=comma>0?result.substring(comma+1,comma+4).toInt():0;
-      ok=code>=200&&code<300;
-      Serial.printf("4G HTTP status=%d\n",code);
+      int p=result.indexOf("+HTTPACTION:");
+      int comma=result.indexOf(',',p);
+      int code=comma>=0?result.substring(comma+1,comma+4).toInt():0;
+      Serial.printf("[LTE] HTTPACTION status=%d\n",code);
+      if(code==715)Serial.println("[LTE] TLS handshake failed: check SSL/SNI, TLS compatibility, modem clock/firmware");
+      ok=code>=200 && code<300;
+    } else {
+      Serial.printf("[LTE] HTTPACTION timeout/error: %s\n",result.c_str());
     }
   }
   command("AT+HTTPTERM","OK",3000);
   return ok;
 }
 void modemTask(void*) {
+  vTaskDelay(pdMS_TO_TICKS(1500)); // allow SIM UART to settle after boot
   for(;;){
-    if(ENABLE_4G_UPLOAD){
-      String body=payload();
-      bool result=send4G(body);
-      Serial.printf("4G telemetry %s\n",result?"OK":"FAILED");
+    if(ENABLE_4G_UPLOAD) {
+      if(!networkReady){
+        Serial.println("[LTE] Initialize / reconnect Wintel data session");
+        networkReady=prepareNetwork();
+        failedUploads=0;
+      }
+      if(networkReady){
+        // Check registration every 30 seconds, not on every HTTP POST.
+        if((uint32_t)(millis()-lastNetworkCheck)>=SIM_NETWORK_CHECK_MS){
+          lastNetworkCheck=millis();
+          if(!queryRegistration()){
+            Serial.println("[LTE] Registration lost, reconnecting");
+            networkReady=false;
+          }
+        }
+      }
+      if(networkReady){
+        String body=payload();
+        bool result=send4G(body);
+        Serial.printf("Node1 -> Render: %s, seq=%lu\n",result?"OK":"FAILED",(unsigned long)modemSeq);
+        if(result)failedUploads=0;
+        else if(++failedUploads>=3) {
+          Serial.println("[LTE] 3 upload failures; refresh network state");
+          networkReady=false;
+        }
+      }
     }
     vTaskDelay(pdMS_TO_TICKS(10000));
   }
