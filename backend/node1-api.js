@@ -63,6 +63,8 @@ function attachNode1Api(app) {
         pending.shift();
         storeStatus.saved++;
         storeStatus.lastSavedAt=new Date().toISOString();
+        if(storeStatus.saved===1 || storeStatus.saved%20===0)
+          console.log("[NODE1 DB] saved",storeStatus.saved,"telemetry rows; pending",pending.length);
         storeStatus.lastError=null;
         storeStatus.lastErrorCode=null;
       }
