@@ -279,6 +279,52 @@ String payload() {
   xSemaphoreGive(sensorLock);
   String out;serializeJson(d,out);return out;
 }
+// HTTPACTION is an asynchronous URC: wait for the complete line.
+// Do not stop when "+HTTPACTION:" first appears; UART bytes arrive separately.
+bool waitHttpAction(int &status, int &sizeBytes, uint32_t timeoutMs) {
+  status=-1;
+  sizeBytes=-1;
+  String line;
+  uint32_t began=millis();
+  while((uint32_t)(millis()-began)<timeoutMs){
+    while(modem.available()){
+      char ch=(char)modem.read();
+      if(ch=='\r')continue;
+      if(ch!='\n'){
+        if(line.length()<256)line+=ch;
+        else line="";
+        continue;
+      }
+      line.trim();
+      if(line.startsWith("+HTTPACTION:")){
+        int action=-1, code=-1, len=-1;
+        // Expected: +HTTPACTION: 1,200,123 or +HTTPACTION: 1,715,0
+        const int commas1=line.indexOf(',');
+        const int commas2=line.indexOf(',',commas1+1);
+        if(commas1>0 && commas2>commas1){
+          action=line.substring(line.indexOf(':')+1,commas1).toInt();
+          code=line.substring(commas1+1,commas2).toInt();
+          len=line.substring(commas2+1).toInt();
+        }
+        Serial.printf("[LTE] Full HTTPACTION: %s\n",line.c_str());
+        if(action==1 && code>0){
+          status=code; sizeBytes=len;
+          return true;
+        }
+        Serial.println("[LTE] Malformed HTTPACTION URC");
+        return false;
+      }
+      if(line.startsWith("+CME ERROR:") || line=="ERROR"){
+        Serial.printf("[LTE] HTTPACTION error: %s\n",line.c_str());
+        return false;
+      }
+      line="";
+    }
+    vTaskDelay(pdMS_TO_TICKS(5));
+  }
+  Serial.println("[LTE] HTTPACTION URC timeout");
+  return false;
+}
 bool send4G(const String& body) {
   // HTTPTERM may answer ERROR when HTTP has not been initialized.
   // This is expected and must not be treated as modem failure.
@@ -309,17 +355,12 @@ bool send4G(const String& body) {
   if(ok){
     while(modem.available())modem.read();
     modem.println("AT+HTTPACTION=1");
-    String result;
-    ok=waitModem("+HTTPACTION:",45000,&result);
+    int code=-1, replyLen=-1;
+    ok=waitHttpAction(code,replyLen,45000);
     if(ok){
-      int p=result.indexOf("+HTTPACTION:");
-      int comma=result.indexOf(',',p);
-      int code=comma>=0?result.substring(comma+1,comma+4).toInt():0;
-      Serial.printf("[LTE] HTTPACTION status=%d\n",code);
-      if(code==715)Serial.println("[LTE] TLS handshake failed: check SSL/SNI, TLS compatibility, modem clock/firmware");
+      Serial.printf("[LTE] HTTPACTION status=%d, responseBytes=%d\n",code,replyLen);
+      if(code==715)Serial.println("[LTE] Modem TLS handshake failure (715)");
       ok=code>=200 && code<300;
-    } else {
-      Serial.printf("[LTE] HTTPACTION timeout/error: %s\n",result.c_str());
     }
   }
   command("AT+HTTPTERM","OK",3000);
