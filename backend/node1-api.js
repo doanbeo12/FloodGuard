@@ -2,6 +2,7 @@
 const express = require("express");
 const crypto = require("crypto");
 const { pool } = require("./db");
+const mqtt = require("mqtt");
 
 const SAVE_MYSQL = String(process.env.NODE1_STORE_MYSQL || "false").toLowerCase() === "true";
 let tableReady = false;
@@ -38,22 +39,17 @@ async function storeTelemetry(d) {
 }
 
 function attachNode1Api(app) {
-  const key = process.env.NODE1_UPLOAD_KEY || "";
-  let latest = null, lastAt = 0, accepted = 0;
-  const num = (x,lo,hi) => typeof x==="number" && Number.isFinite(x) && x>=lo && x<=hi ? x : null;
-  const authorized = req => {
-    const supplied=req.get("x-node-key") || "";
-    const a=Buffer.from(key), b=Buffer.from(supplied);
-    return !!key && a.length===b.length && crypto.timingSafeEqual(a,b);
-  };
+  const key=process.env.NODE1_UPLOAD_KEY||"";
+  const topic=process.env.MQTT_NODE1_TOPIC||"flood-monitoring/floodguard-doanbeo12/node1-telemetry-v3";
+  const broker=process.env.MQTT_NODE1_URL||"mqtt://broker.hivemq.com:1883";
+  const enabled=process.env.MQTT_NODE1_ENABLED==="true";
+  let latest=null, lastAt=0, accepted=0;
+  let storeQueue=Promise.resolve();
+  const num=(x,lo,hi)=>typeof x==="number"&&Number.isFinite(x)&&x>=lo&&x<=hi?x:null;
 
-  app.post("/api/node1/telemetry", express.json({limit:"3kb"}), async (req,res) => {
-    if (!authorized(req)) return res.sendStatus(401);
-    const d=req.body || {};
-    if (d.nodeId!==1 || !Number.isSafeInteger(d.seq) || d.seq<0) {
-      return res.status(400).json({error:"invalid_node_or_seq"});
-    }
-    const out={
+  function normalize(d) {
+    if(!d || d.nodeId!==1 || !Number.isSafeInteger(d.seq) || d.seq<0)return null;
+    return {
       nodeId:1,seq:d.seq,uptimeMs:num(d.uptimeMs,0,4294967295),
       temperatureC:num(d.temperatureC,-40,100),humidityPct:num(d.humidityPct,0,100),
       pressureHpa:num(d.pressureHpa,300,1200),windRpm:num(d.windRpm,0,10000),
@@ -65,25 +61,62 @@ function attachNode1Api(app) {
       fault:typeof d.fault==="string"?d.fault.slice(0,64):"",
       wifiConnected:d.wifiConnected===true,at:new Date().toISOString()
     };
-    if(SAVE_MYSQL){
-      try {
-        await storeTelemetry(out);
-      }catch(err){
+  }
+  function receive(d, source) {
+    const out=normalize(d);
+    if(!out)return false;
+    latest=out;lastAt=Date.now();accepted++;
+    if(SAVE_MYSQL) {
+      // Keep UI responsive even if MySQL is temporarily unavailable.
+      storeQueue=storeQueue.then(()=>storeTelemetry(out)).catch(err=>{
         tableReady=false;
         console.error("[NODE1] MySQL save failed:",err.message);
-        return res.status(503).json({ok:false,error:"database_unavailable"});
-      }
+      });
     }
-    latest=out;lastAt=Date.now();accepted++;
-    res.set("Cache-Control","no-store").json({ok:true,seq:accepted,stored:SAVE_MYSQL});
+    if(accepted===1 || accepted%10===0)
+      console.log("[NODE1] received",source,"seq:",out.seq,"count:",accepted);
+    return true;
+  }
+  const authorized=req=>{
+    const supplied=req.get("x-node-key")||"";
+    const a=Buffer.from(key),b=Buffer.from(supplied);
+    return !!key&&a.length===b.length&&crypto.timingSafeEqual(a,b);
+  };
+  // Retain legacy HTTPS ingest endpoint for diagnostics, disabled without key.
+  app.post("/api/node1/telemetry",express.json({limit:"3kb"}),(req,res)=>{
+    if(!authorized(req))return res.sendStatus(401);
+    if(!receive(req.body,"https"))return res.status(400).json({error:"invalid_telemetry"});
+    res.set("Cache-Control","no-store").json({ok:true,seq:accepted,storage:SAVE_MYSQL?"mysql":"memory"});
   });
-
   app.get("/api/node1/status",(_req,res)=>{
-    const online=!!latest && Date.now()-lastAt<=30000;
+    const online=!!latest&&Date.now()-lastAt<=30000;
     res.set({"Cache-Control":"no-store","Access-Control-Allow-Origin":"*"})
-      .json({online,ageMs:latest?Date.now()-lastAt:null,node:online?latest:null,storage:SAVE_MYSQL?"mysql":"memory"});
+      .json({online,ageMs:latest?Date.now()-lastAt:null,node:online?latest:null,
+        storage:SAVE_MYSQL?"mysql":"memory",transport:enabled?"mqtt":"https"});
   });
-  console.log("[NODE1] LTE telemetry:",key?"secured":"NODE1_UPLOAD_KEY MISSING",
-    "storage:",SAVE_MYSQL?"mysql":"memory");
+  if(enabled){
+    // MQTT public broker: topic isolation is NOT authentication. Telemetry only.
+    const client=mqtt.connect(broker,{
+      clientId:"FGNode1Backend_"+require("crypto").randomBytes(6).toString("hex"),
+      clean:true,reconnectPeriod:5000,connectTimeout:12000,
+      resubscribe:true
+    });
+    client.on("connect",()=>{
+      console.log("[NODE1 MQTT] Connected",broker);
+      client.subscribe(topic,{qos:0},err=>{
+        if(err)console.error("[NODE1 MQTT] subscribe error:",err.message);
+        else console.log("[NODE1 MQTT] Listening:",topic);
+      });
+    });
+    client.on("message",(recvTopic,buf)=>{
+      if(recvTopic!==topic||buf.length>3072)return;
+      try{
+        const data=JSON.parse(buf.toString("utf8"));
+        if(!receive(data,"mqtt"))console.warn("[NODE1 MQTT] Invalid payload");
+      }catch(err){console.warn("[NODE1 MQTT] Invalid JSON:",err.message);}
+    });
+    client.on("error",err=>console.error("[NODE1 MQTT]",err.message));
+  }else console.log("[NODE1 MQTT] disabled (MQTT_NODE1_ENABLED=false)");
+  console.log("[NODE1] telemetry storage:",SAVE_MYSQL?"mysql":"memory");
 }
 module.exports={attachNode1Api};
