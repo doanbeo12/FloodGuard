@@ -719,7 +719,8 @@ const httpServer = app.listen(PORT, async () => {
     console.log(`Flood Monitoring API ${API_VERSION}: http://localhost:${PORT}`);
     try {
         await checkDatabase();
-        console.log("[DB] MySQL connected");
+        const [selectedDb] = await pool.query("SELECT DATABASE() AS db_name");
+        console.log("[DB] MySQL connected; selected database:", selectedDb?.[0]?.db_name || "none");
     } catch (error) {
         console.error("[DB] MySQL connection failed:", error.message);
         console.error("Chạy: npm run db:init sau khi cấu hình file .env");
