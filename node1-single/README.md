@@ -40,7 +40,7 @@ JSN ECHO 5 V **phải qua chuyển mức** trước khi vào ESP32. Bơm dùng n
 
 - Backend \`POST /api/node1/telemetry\` bảo vệ bằng header \`X-Node-Key\` và biến \`NODE1_UPLOAD_KEY\`.
 - Web đọc \`GET /api/node1/status\` mỗi 5 giây, camera từ \`/camera/status\`.
-- Backend mới giữ telemetry mới nhất **trong RAM**, chưa ghi vào bảng lịch sử; service restart sẽ mất giá trị cuối.
+- Backend hiển thị telemetry mới nhất từ RAM. Có thể bật `NODE1_STORE_MYSQL=true` sau khi MySQL hoạt động để lưu bảng `node1_telemetry`; restart vẫn làm trạng thái realtime trở về Offline cho tới khi có lần POST mới.
 - Chỉ bật Render và deploy Backend + Web bản mới khi cần.
 
 ## Giới hạn cần kiểm thử
@@ -49,3 +49,14 @@ JSN ECHO 5 V **phải qua chuyển mức** trước khi vào ESP32. Bơm dùng n
 - Chương trình **chưa build và chưa kiểm thử điện thật**. Không cho phép điều khiển bơm tự động nếu chưa kiểm tra nguồn, khả năng đọc AI ở 0–3cm, rơ-le/MOSFET và biện pháp chống tràn vật lý.
 - \`/ai\` chạy HTTP trong Wi-Fi nội bộ với khóa bí mật; không mở cổng này ra Internet hoặc Wi-Fi công cộng. Nếu cần bảo mật cao hơn, dùng mạng nội bộ riêng và TLS/proxy xác thực.
 - Mô hình nhận diện trên laptop hiện là OpenCV hiệu chuẩn, **chưa tự động biến thành YOLO**; YOLO cần dữ liệu gán nhãn và model đã huấn luyện.
+
+## SIM7680C MKE-M21 / Wintel (cập nhật 17-11-2026)
+
+- Dựa vào Central v1.6.2 đã hoạt động: UART ESP32 RX=18/TX=19, **9600 bps**, APN `m9-wintel`. Serial Monitor USB vẫn **115200 bps**.
+- Đã bổ sung `AT` retry, `ATE0`, `AT+CPIN?`, `AT+CGDCONT=1,"IP","m9-wintel"`, `AT+CGATT=1`, và `AT+CEREG?` chờ đăng ký tối đa 20 giây; kiểm tra lại LTE định kỳ 30 giây.
+- HTTPS tới Render sử dụng SSL context 0, `AT+CSSLCFG="sslversion",0,3` (TLS 1.2), `AT+CSSLCFG="enableSNI",0,1`, `AT+HTTPPARA="SSLCFG",0`, `AT+HTTPPARA="CID",1`, rồi POST JSON với `X-Node-Key`. Lệnh nào bị từ chối sẽ được báo rõ trên serial (không in khóa bí mật).
+- `+HTTPACTION: 1,715,0` là **lỗi modem khi bắt tay TLS**, không phải HTTP 715 từ Backend. Bật SNI/TLS 1.2 là một biện pháp thử; nếu vẫn 715, phải kiểm tra modem firmware `AT+GMR`, thời gian TLS, và khả năng tương thích chứng chỉ/cipher.
+- **Không tự động thay HTTPS bằng HTTP hoặc tắt bảo mật chứng chỉ** khi gặp lỗi TLS. Kiểm tra AT command compatibility trên phiên bản modem đang dùng.
+- Luôn giữ `ENABLE_PUMPS 0` khi thử mạng. Sau khi đã điền khóa cục bộ và Render, mới đổi `ENABLE_4G_UPLOAD 1`. Không gửi giá trị các khóa trong ảnh log.
+- Kiểm tra `GET https://floodguard-backend-4dua.onrender.com/api/node1/status` khi nhận `[LTE] HTTPACTION status=200`.
+- Mã nguồn cập nhật trên GitHub chưa được biên dịch bằng PlatformIO và chưa thử nghiệm thực tế trên modem của người dùng. Nếu lệnh SSL bị báo ERROR, gửi log bao gồm dòng `[SIM]` (che các khóa).
