@@ -1,6 +1,10 @@
 const mysql = require("mysql2/promise");
 require("dotenv").config();
 
+// Optional TLS for hosted MySQL. Set DB_SSL=true only if required by provider.
+const useSSL = String(process.env.DB_SSL || "false").toLowerCase()==="true";
+const sslOptions = useSSL ? {rejectUnauthorized:true} : undefined;
+
 const config = {
     host: process.env.DB_HOST || process.env.MYSQLHOST || "127.0.0.1",
     port: Number(process.env.DB_PORT || process.env.MYSQLPORT || 3306),
@@ -11,6 +15,7 @@ const config = {
     connectionLimit: Number(process.env.DB_CONNECTION_LIMIT || 10),
     queueLimit: 0,
     dateStrings: false,
+    ...(sslOptions ? {ssl:sslOptions} : {}),
 };
 
 // Railway also exposes MYSQL_URL. mysql2 can consume it directly.
