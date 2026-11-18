@@ -208,6 +208,7 @@ def capture_worker(latest, stop):
     detector = WaterLevelDetector() if AI_ENABLED else None
     interval = 1.0 / FPS_LIMIT
     last_ai_log = 0.0
+    snapshot_delay = max(interval, 3.0) if CAMERA_SOURCE == "snapshot" else interval
     while not stop.is_set():
         source = None
         session = None
@@ -226,9 +227,24 @@ def capture_worker(latest, stop):
                 delay = next_capture - time.monotonic()
                 if delay > 0 and stop.wait(delay):
                     return
-                next_capture = time.monotonic() + interval
+                next_capture = time.monotonic() + (snapshot_delay if CAMERA_SOURCE == "snapshot" else interval)
                 if CAMERA_SOURCE == "snapshot":
-                    frame = read_snapshot(session, url)
+                    try:
+                        frame = read_snapshot(session, url)
+                    except requests.HTTPError as exc:
+                        if exc.response is not None and exc.response.status_code == 429:
+                            retry_after = exc.response.headers.get("Retry-After", "")
+                            try:
+                                wait_seconds = max(3.0, min(60.0, float(retry_after)))
+                            except (ValueError, TypeError):
+                                wait_seconds = min(30.0, max(6.0, snapshot_delay * 2))
+                            snapshot_delay = max(snapshot_delay, wait_seconds)
+                            print(f"Camera HTTP 429: pausing {wait_seconds:.0f}s; snapshot interval now {snapshot_delay:.1f}s", flush=True)
+                            if stop.wait(wait_seconds):
+                                return
+                            next_capture = time.monotonic()
+                            continue
+                        raise
                 else:
                     ok, frame = source.read()
                     if not ok or frame is None:
