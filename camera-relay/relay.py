@@ -8,6 +8,7 @@ import json
 import time
 import socket
 import threading
+import numpy as np
 from urllib.parse import urlsplit, urlunsplit
 from zeroconf import ServiceBrowser, ServiceListener, Zeroconf
 import cv2
@@ -19,6 +20,8 @@ from mjpeg_reader import MjpegCamera
 CAMERA_URL = os.getenv("CAMERA_URL", "")
 CAMERA_STREAM_URL = os.getenv("CAMERA_STREAM_URL", "")
 CAMERA_STREAM_PORT = int(os.getenv("CAMERA_STREAM_PORT", "80"))
+CAMERA_SOURCE = os.getenv("CAMERA_SOURCE", "mjpeg").strip().lower()
+CAMERA_SNAPSHOT_URL = os.getenv("CAMERA_SNAPSHOT_URL", "").strip()
 CAMERA_FALLBACK_URL = os.getenv("CAMERA_FALLBACK_URL", "")
 CAMERA_MDNS_NAME = os.getenv("CAMERA_MDNS_NAME", "floodguard-cam").removesuffix(".local")
 RELAY_URL = os.getenv("RELAY_URL", "wss://floodguard-backend-4dua.onrender.com/camera/uplink")
@@ -156,55 +159,89 @@ class LatestFrame:
             return self.seq, self.jpeg, self.ai
 
 
+def snapshot_url(candidate):
+    """Use the camera firmware's independent JPEG endpoint (port 81)."""
+    parts = urlsplit(candidate)
+    if parts.scheme != "http" or not parts.hostname:
+        raise ValueError("Snapshot URL must be http://host[:port]/...")
+    host = f"[{parts.hostname}]" if ":" in parts.hostname else parts.hostname
+    return f"http://{host}:81/capture"
+
+
+def read_snapshot(session, url):
+    """Request a single JPEG; never keep an open MJPEG stream."""
+    with session.get(url, timeout=(3, 6), headers={"Connection": "close"},
+                     stream=True) as response:
+        response.raise_for_status()
+        data = response.raw.read(512 * 1024 + 1)
+    if not (4 <= len(data) <= 512 * 1024 and
+            data[:2] == b"\\xff\\xd8" and data[-2:] == b"\\xff\\xd9"):
+        raise RuntimeError("Camera /capture returned invalid or oversized JPEG")
+    frame = cv2.imdecode(np.frombuffer(data, dtype=np.uint8),
+                         cv2.IMREAD_COLOR)
+    if frame is None:
+        raise RuntimeError("Camera /capture JPEG decode failed")
+    return frame
+
+
 def capture_worker(latest, stop):
-    """Camera + AI worker runs regardless of WebSocket connectivity."""
+    """Read one frame at a time; AI and upload run in independent threads."""
     detector = WaterLevelDetector() if AI_ENABLED else None
     interval = 1.0 / FPS_LIMIT
     last_ai_log = 0.0
     while not stop.is_set():
+        source = None
+        session = None
         try:
-            url = discover_camera_url()
-            print("Camera MJPEG stream endpoint:", url, flush=True)
-            source = MjpegCamera(url, timeout=8)
+            if CAMERA_SOURCE == "snapshot":
+                url = snapshot_url(CAMERA_SNAPSHOT_URL) if CAMERA_SNAPSHOT_URL else snapshot_url(discover_camera_url())
+                print("Camera JPEG snapshot endpoint:", url, flush=True)
+                session = requests.Session()
+                session.trust_env = False
+            else:
+                url = discover_camera_url()
+                print("Camera MJPEG stream endpoint:", url, flush=True)
+                source = MjpegCamera(url, timeout=8)
             next_capture = time.monotonic()
-            errors = 0
-            try:
-                while not stop.is_set():
-                    delay = next_capture - time.monotonic()
-                    if delay > 0 and stop.wait(delay):
-                        return
-                    next_capture = time.monotonic() + interval
+            while not stop.is_set():
+                delay = next_capture - time.monotonic()
+                if delay > 0 and stop.wait(delay):
+                    return
+                next_capture = time.monotonic() + interval
+                if CAMERA_SOURCE == "snapshot":
+                    frame = read_snapshot(session, url)
+                else:
                     ok, frame = source.read()
                     if not ok or frame is None:
                         raise RuntimeError("Camera returned no image")
-                    errors = 0
-                    ai = None
-                    if detector:
-                        try:
-                            frame, level = detector.process(frame)
-                            ai = {"type": "ai", **detector.last_result}
-                            now = time.monotonic()
-                            if now - last_ai_log >= 5:
-                                print("AI optical level:", ai["status"], "/",
-                                      level, flush=True)
-                                last_ai_log = now
-                        except Exception as exc:
-                            print("AI processing error:", exc, flush=True)
-                            ai = {"type": "ai", "status": "error",
-                                  "levelCm": None, "confidence": None}
-                    jpeg = encode_frame(frame)
-                    if jpeg is not None:
-                        latest.publish(jpeg, ai)
-                    else:
-                        print("Skipping oversized JPEG", flush=True)
-            finally:
-                source.release()
+                ai = None
+                if detector:
+                    try:
+                        frame, level = detector.process(frame)
+                        ai = {"type": "ai", **detector.last_result}
+                        now = time.monotonic()
+                        if now - last_ai_log >= 5:
+                            print("AI optical level:", ai["status"], "/",
+                                  level, flush=True)
+                            last_ai_log = now
+                    except Exception as exc:
+                        print("AI processing error:", exc, flush=True)
+                        ai = {"type": "ai", "status": "error",
+                              "levelCm": None, "confidence": None}
+                jpeg = encode_frame(frame)
+                if jpeg is not None:
+                    latest.publish(jpeg, ai)
+                else:
+                    print("Skipping oversized JPEG", flush=True)
         except Exception as exc:
-            print("Camera worker error:", exc, "- rediscovering in 3s",
-                  flush=True)
+            print("Camera worker error:", exc, "- retrying in 3s", flush=True)
             if stop.wait(3):
                 return
-
+        finally:
+            if source is not None:
+                source.release()
+            if session is not None:
+                session.close()
 
 
 def discover_node1():
@@ -371,6 +408,8 @@ def websocket_sender(latest, stop):
 def run():
     if not STREAM_KEY:
         raise SystemExit("Set CAMERA_STREAM_KEY first; do not put it in public code.")
+    if CAMERA_SOURCE not in ("mjpeg","snapshot"):
+        raise SystemExit("CAMERA_SOURCE must be mjpeg or snapshot")
     if TRANSPORT not in ("http","websocket"):
         raise SystemExit("CAMERA_TRANSPORT must be http or websocket")
     print(f"FloodGuard relay v2: {TRANSPORT} upload, independent AI",flush=True)
