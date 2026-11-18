@@ -169,19 +169,38 @@ def snapshot_url(candidate):
 
 
 def read_snapshot(session, url):
-    """Request a single JPEG; never keep an open MJPEG stream."""
-    with session.get(url, timeout=(3, 6), headers={"Connection": "close"},
+    """Read until JPEG end marker without waiting for HTTP EOF or 512 KB."""
+    with session.get(url, timeout=(3, 8), headers={"Connection": "close"},
                      stream=True) as response:
         response.raise_for_status()
-        data = response.raw.read(512 * 1024 + 1)
-    if not (4 <= len(data) <= 512 * 1024 and
-            data[:2] == b"\\xff\\xd8" and data[-2:] == b"\\xff\\xd9"):
-        raise RuntimeError("Camera /capture returned invalid or oversized JPEG")
-    frame = cv2.imdecode(np.frombuffer(data, dtype=np.uint8),
-                         cv2.IMREAD_COLOR)
-    if frame is None:
-        raise RuntimeError("Camera /capture JPEG decode failed")
-    return frame
+        content_type = response.headers.get("Content-Type", "").lower()
+        data = bytearray()
+        # ESP32 sometimes streams without a reliable Content-Length; read
+        # incrementally and finish at JPEG EOI rather than waiting for EOF.
+        for chunk in response.iter_content(chunk_size=1024):
+            if not chunk:
+                continue
+            data.extend(chunk)
+            if len(data) > 512 * 1024:
+                raise RuntimeError("Camera /capture JPEG exceeded 512 KB")
+            start = data.find(b"\\xff\\xd8")
+            if start >= 0:
+                end = data.find(b"\\xff\\xd9", start + 2)
+                if end >= 0:
+                    jpeg = bytes(data[start:end + 2])
+                    frame = cv2.imdecode(np.frombuffer(jpeg, dtype=np.uint8),
+                                         cv2.IMREAD_COLOR)
+                    if frame is None:
+                        raise RuntimeError("Camera /capture JPEG decode failed")
+                    return frame
+            if len(data) >= 8192 and b"\\xff\\xd8" not in data:
+                raise RuntimeError(
+                    f"Camera /capture is not JPEG (type={content_type}, "
+                    f"first_bytes={bytes(data[:80])!r})")
+        raise RuntimeError(
+            f"Camera /capture ended without complete JPEG "
+            f"(type={content_type}, bytes={len(data)}, "
+            f"first_bytes={bytes(data[:80])!r})")
 
 
 def capture_worker(latest, stop):
