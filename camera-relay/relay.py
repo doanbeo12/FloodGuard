@@ -183,9 +183,9 @@ def read_snapshot(session, url):
             data.extend(chunk)
             if len(data) > 512 * 1024:
                 raise RuntimeError("Camera /capture JPEG exceeded 512 KB")
-            start = data.find(b"\\xff\\xd8")
+            start = data.find(b"\xff\xd8")
             if start >= 0:
-                end = data.find(b"\\xff\\xd9", start + 2)
+                end = data.find(b"\xff\xd9", start + 2)
                 if end >= 0:
                     jpeg = bytes(data[start:end + 2])
                     frame = cv2.imdecode(np.frombuffer(jpeg, dtype=np.uint8),
@@ -193,7 +193,7 @@ def read_snapshot(session, url):
                     if frame is None:
                         raise RuntimeError("Camera /capture JPEG decode failed")
                     return frame
-            if len(data) >= 8192 and b"\\xff\\xd8" not in data:
+            if len(data) >= 8192 and b"\xff\xd8" not in data:
                 raise RuntimeError(
                     f"Camera /capture is not JPEG (type={content_type}, "
                     f"first_bytes={bytes(data[:80])!r})")
