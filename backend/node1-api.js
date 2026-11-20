@@ -134,6 +134,31 @@ function attachNode1Api(app) {
       .json({online,ageMs:latest?Date.now()-lastAt:null,node:online?latest:null,
         storage:SAVE_MYSQL?"mysql":"memory",transport:enabled?"mqtt":"https"});
   });
+  // Read-only telemetry history for the dashboard water-level chart.
+  app.get("/api/node1/level-history", async (req, res) => {
+    res.set({"Cache-Control":"no-store","Access-Control-Allow-Origin":"*"});
+    if (!SAVE_MYSQL) return res.json({minutes:60,points:[],available:false});
+    const allowed=[30,60,120];
+    const minutes=allowed.includes(Number(req.query.minutes))?Number(req.query.minutes):60;
+    try {
+      const [rows]=await pool.execute(
+        "SELECT received_at, jsn_level_cm, ai_level_cm, ai_valid " +
+        "FROM node1_telemetry " +
+        "WHERE received_at >= DATE_SUB(NOW(3), INTERVAL ? MINUTE) " +
+        "ORDER BY received_at DESC LIMIT 800", [minutes]
+      );
+      const points=rows.reverse().map(row=>({
+        at:row.received_at instanceof Date?row.received_at.toISOString():String(row.received_at),
+        jsnCm:Number.isFinite(Number(row.jsn_level_cm))&&row.jsn_level_cm!==null?Number(row.jsn_level_cm):null,
+        aiCm:row.ai_valid===1 || row.ai_valid===true ?
+          (row.ai_level_cm!==null&&Number.isFinite(Number(row.ai_level_cm))?Number(row.ai_level_cm):null):null
+      }));
+      res.json({minutes,available:true,points});
+    } catch(err) {
+      console.error("[NODE1] level-history:",err.code||"",err.message);
+      res.status(503).json({error:"history_unavailable"});
+    }
+  });
   // Operational status only: no credentials, host or database name in response.
   app.get("/api/node1/storage-status",(_req,res)=>{
     res.set({"Cache-Control":"no-store","Access-Control-Allow-Origin":"*"})
