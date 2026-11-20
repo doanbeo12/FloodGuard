@@ -19,3 +19,22 @@
 .weather-condition{font-size:15px;font-weight:700;line-height:1.35;min-height:40px;display:flex;align-items:center;justify-content:center}
 .weather-metrics{display:none}
 @media(max-width:620px){.forecast-near{grid-template-columns:1fr}.forecast-grid{grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}.weather-card{padding:12px 7px;min-height:160px}.weather-condition{font-size:12px}.weather-icon{font-size:30px}.weather-day{font-size:13px}.forecast-heading h2{font-size:19px}}
+
+
+.level-chart-section{margin-top:28px}
+.level-chart-head{flex-wrap:wrap;margin-bottom:14px}
+.level-chart-head h2{font-size:22px}
+.level-range{display:flex;gap:6px;background:#eaf0f6;border-radius:11px;padding:4px}
+.level-range button{border:0;border-radius:8px;padding:8px 13px;font:600 13px inherit;font-family:inherit;cursor:pointer;background:transparent;color:#51647b}
+.level-range button.selected{background:#fff;color:#0e567e;box-shadow:0 2px 9px #1736531c}
+.level-range button:focus-visible{outline:2px solid #0b7198;outline-offset:2px}
+.level-chart-card{padding:20px}
+.level-chart-legend{display:flex;align-items:center;gap:20px;flex-wrap:wrap;font-size:13px;font-weight:600;color:#4c6277}
+.level-chart-legend span::before{content:"";display:inline-block;width:18px;height:3px;border-radius:2px;vertical-align:middle;margin-right:7px}
+.level-chart-legend .level-legend-jsn::before{background:#0b7198}
+.level-chart-legend .level-legend-ai::before{background:#ed9140}
+.level-chart-unit{margin-left:auto}
+.level-chart-unit::before{display:none!important}
+#levelHistoryChart{display:block;width:100%;height:280px;margin-top:12px;overflow:visible}
+#levelChartStatus{margin-top:8px}
+@media(max-width:620px){.level-chart-head h2{font-size:19px}.level-range button{padding:7px 9px;font-size:12px}.level-chart-card{padding:14px 10px}#levelHistoryChart{height:220px}}
