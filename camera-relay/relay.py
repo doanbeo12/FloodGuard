@@ -31,6 +31,7 @@ JPEG_QUALITY = max(40, min(95, int(os.getenv("CAMERA_JPEG_QUALITY", "85"))))
 MAX_WIDTH = max(320, min(1280, int(os.getenv("CAMERA_MAX_WIDTH", "1024"))))
 MAX_FRAME_BYTES = 180 * 1024  # Must match backend/camera-relay.js
 AI_ENABLED = os.getenv("CAMERA_AI_ENABLED", "0") == "1"
+AI_ENGINE = os.getenv("CAMERA_AI_ENGINE", "opencv").strip().lower()
 TRANSPORT = os.getenv("CAMERA_TRANSPORT", "http").lower()
 HTTP_BASE = os.getenv("CAMERA_HTTP_BASE", RELAY_URL.replace("wss://", "https://").replace("ws://", "http://").split("/camera/")[0]).rstrip("/")
 NODE1_URL = os.getenv("NODE1_URL", "").rstrip("/")
@@ -205,7 +206,15 @@ def read_snapshot(session, url):
 
 def capture_worker(latest, stop):
     """Read one frame at a time; AI and upload run in independent threads."""
-    detector = WaterLevelDetector() if AI_ENABLED else None
+    if not AI_ENABLED:
+        detector = None
+    elif AI_ENGINE == "yolo":
+        from yolo_water_level import YoloWaterLevelDetector
+        detector = YoloWaterLevelDetector()
+        print("Camera AI engine: YOLO segmentation (experimental; Node 1 forwarding disabled)", flush=True)
+    else:
+        detector = WaterLevelDetector()
+        print("Camera AI engine: OpenCV", flush=True)
     interval = 1.0 / FPS_LIMIT
     last_ai_log = 0.0
     snapshot_delay = max(interval, 3.0) if CAMERA_SOURCE == "snapshot" else interval
@@ -257,12 +266,12 @@ def capture_worker(latest, stop):
                         ai = {"type": "ai", **detector.last_result}
                         now = time.monotonic()
                         if now - last_ai_log >= 5:
-                            print("AI optical level:", ai["status"], "/",
+                            print("AI "+AI_ENGINE+" level:", ai["status"], "/",
                                   level, flush=True)
                             last_ai_log = now
                     except Exception as exc:
                         print("AI processing error:", exc, flush=True)
-                        ai = {"type": "ai", "status": "error",
+                        ai = {"type": "ai", "status": "error", "method": AI_ENGINE,
                               "levelCm": None, "confidence": None}
                 jpeg = encode_frame(frame)
                 if jpeg is not None:
@@ -318,6 +327,9 @@ def discover_node1():
 
 
 def node1_ai_sender(latest, stop):
+    if AI_ENGINE == "yolo":
+        print("YOLO trial: Node 1 AI upload disabled until cm accuracy is verified", flush=True)
+        return
     if not NODE1_AI_KEY or NODE1_AI_KEY == "SET_PRIVATE_LOCAL_AI_KEY":
         print("NODE1_AI_KEY not set; local AI forwarding disabled", flush=True)
         return
@@ -444,6 +456,8 @@ def websocket_sender(latest, stop):
 def run():
     if not STREAM_KEY:
         raise SystemExit("Set CAMERA_STREAM_KEY first; do not put it in public code.")
+    if AI_ENGINE not in ("opencv","yolo"):
+        raise SystemExit("CAMERA_AI_ENGINE must be opencv or yolo")
     if CAMERA_SOURCE not in ("mjpeg","snapshot"):
         raise SystemExit("CAMERA_SOURCE must be mjpeg or snapshot")
     if TRANSPORT not in ("http","websocket"):
