@@ -43,7 +43,8 @@
       typeof ai.levelCm === "number" && Number.isFinite(ai.levelCm) &&
       ai.levelCm >= 0 && ai.levelCm <= 10;
     aiLevel.textContent = valid ? ai.levelCm.toFixed(1) : "--";
-    aiStatus.textContent = fresh ? (labels[ai.status] || "Chưa có dữ liệu AI") : labels.offline;
+    const method = ai && ai.method === "yolo" ? "YOLO Segmentation" : "OpenCV";
+    aiStatus.textContent = fresh ? (method + " • " + (labels[ai.status] || "Chưa có dữ liệu AI")) : labels.offline;
     aiConfidence.textContent = valid && Number.isFinite(ai.confidence) ?
       Math.round(ai.confidence * 100) + "% (ước lượng)" : "--";
     aiUpdated.textContent = valid ? new Date(ai.at).toLocaleTimeString("vi-VN", {hour12:false}) : "--";
