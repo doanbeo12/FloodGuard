@@ -204,17 +204,8 @@ def read_snapshot(session, url):
             f"first_bytes={bytes(data[:80])!r})")
 
 
-def capture_worker(latest, stop):
+def capture_worker(latest, stop, detector):
     """Read one frame at a time; AI and upload run in independent threads."""
-    if not AI_ENABLED:
-        detector = None
-    elif AI_ENGINE == "yolo":
-        from yolo_water_level import YoloWaterLevelDetector
-        detector = YoloWaterLevelDetector()
-        print("Camera AI engine: YOLO segmentation (experimental; Node 1 forwarding disabled)", flush=True)
-    else:
-        detector = WaterLevelDetector()
-        print("Camera AI engine: OpenCV", flush=True)
     interval = 1.0 / FPS_LIMIT
     last_ai_log = 0.0
     snapshot_delay = max(interval, 3.0) if CAMERA_SOURCE == "snapshot" else interval
@@ -463,9 +454,18 @@ def run():
     if TRANSPORT not in ("http","websocket"):
         raise SystemExit("CAMERA_TRANSPORT must be http or websocket")
     print(f"FloodGuard relay v2: {TRANSPORT} upload, independent AI",flush=True)
+    detector = None
+    if AI_ENABLED:
+        if AI_ENGINE == "yolo":
+            from yolo_water_level import YoloWaterLevelDetector
+            detector = YoloWaterLevelDetector()
+            print("Camera AI engine: YOLO segmentation (experimental; Node 1 forwarding disabled)", flush=True)
+        else:
+            detector = WaterLevelDetector()
+            print("Camera AI engine: OpenCV", flush=True)
     latest=LatestFrame()
     stop=threading.Event()
-    camera_thread=threading.Thread(target=capture_worker,args=(latest,stop),daemon=True)
+    camera_thread=threading.Thread(target=capture_worker,args=(latest,stop,detector),daemon=True)
     camera_thread.start()
     node_thread=threading.Thread(target=node1_ai_sender,args=(latest,stop),daemon=True)
     node_thread.start()
