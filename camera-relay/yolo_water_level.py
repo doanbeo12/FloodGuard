@@ -64,7 +64,18 @@ class YoloWaterLevelDetector:
                     continue
                 prob = float(result.boxes.conf[i].item())
                 raw_mask = result.masks.data[i].cpu().numpy()
-                mask = cv2.resize(raw_mask, (width, height),
+                mh, mw = raw_mask.shape[:2]
+                # Undo letterbox padding before resizing the raster mask,
+                # so occluder holes are preserved and coordinates match camera-ai.json.
+                gain = min(mw / width, mh / height)
+                pad_x = max(0, (mw - width * gain) / 2)
+                pad_y = max(0, (mh - height * gain) / 2)
+                xa, xb = round(pad_x), round(mw - pad_x)
+                ya, yb = round(pad_y), round(mh - pad_y)
+                cropped = raw_mask[ya:yb, xa:xb]
+                if cropped.size == 0:
+                    continue
+                mask = cv2.resize(cropped, (width, height),
                                   interpolation=cv2.INTER_NEAREST) >= 0.5
                 if mask.sum() < 100:
                     continue
