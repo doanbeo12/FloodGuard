@@ -42,6 +42,7 @@ function attachCameraHttp(app) {
        v.levelCm >= 0 && v.levelCm <= 10 && Number.isFinite(v.confidence) &&
        v.confidence >= 0 && v.confidence <= 1;
     ai = {type:"ai",status:valid?"ok":v.status==="ok"?"error":v.status,
+          method:v.method==="yolo"?"yolo":"opencv",
           levelCm:valid?Math.round(v.levelCm*100)/100:null,
           confidence:valid?Math.round(v.confidence*100)/100:null,
           at:Date.now()};
