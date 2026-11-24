@@ -5,6 +5,7 @@
   const badge = el("cameraLiveBadge"), updated = el("cameraLastFrame");
   const aiLevel = el("cameraAiLevel"), aiStatus = el("cameraAiStatus");
   const aiConfidence = el("cameraAiConfidence"), aiUpdated = el("cameraAiUpdated");
+  const obstacleStatus = el("cameraObstacleStatus");
   if (!image || !placeholder || !badge || !updated) return;
 
   const base = String(window.FLOODGUARD_API_BASE_URL || location.origin).replace(/\/$/, "");
@@ -42,6 +43,17 @@
     const valid = fresh && ai.status === "ok" &&
       typeof ai.levelCm === "number" && Number.isFinite(ai.levelCm) &&
       ai.levelCm >= 0 && ai.levelCm <= 10;
+    if (obstacleStatus) {
+      const obstacle = fresh && ai.method === "yolo" ? ai.obstacle : "unknown";
+      const names = {
+        clear: "Chưa thấy dấu hiệu vật cản",
+        suspected: "Nghi có vật cản — kiểm tra camera",
+        calibrating: "Đang lấy mẫu nền không có vật cản",
+        unknown: "Chưa đủ dữ liệu đánh giá vật cản"
+      };
+      obstacleStatus.textContent = "Vật cản: " + (names[obstacle] || names.unknown);
+      obstacleStatus.style.color = obstacle === "suspected" ? "#d97706" : "";
+    }
     aiLevel.textContent = valid ? ai.levelCm.toFixed(1) : "--";
     const method = ai && ai.method === "yolo" ? "YOLO Segmentation" : "OpenCV";
     aiStatus.textContent = fresh ? (method + " • " + (labels[ai.status] || "Chưa có dữ liệu AI")) : labels.offline;
