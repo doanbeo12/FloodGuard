@@ -45,14 +45,9 @@
       ai.levelCm >= 0 && ai.levelCm <= 10;
     if (obstacleStatus) {
       const obstacle = fresh && ai.method === "yolo" ? ai.obstacle : "unknown";
-      const names = {
-        clear: "Chưa thấy dấu hiệu vật cản",
-        suspected: "Nghi có vật cản — kiểm tra camera",
-        calibrating: "Đang lấy mẫu nền không có vật cản",
-        unknown: "Chưa đủ dữ liệu đánh giá vật cản"
-      };
-      obstacleStatus.textContent = "Vật cản: " + (names[obstacle] || names.unknown);
+      obstacleStatus.textContent = obstacle === "suspected" ? "Có vật cản" : "";
       obstacleStatus.style.color = obstacle === "suspected" ? "#d97706" : "";
+      obstacleStatus.style.display = obstacle === "suspected" ? "" : "none";
     }
     aiLevel.textContent = valid ? ai.levelCm.toFixed(1) : "--";
     const method = ai && ai.method === "yolo" ? "YOLO Segmentation" : "OpenCV";
