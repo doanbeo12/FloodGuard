@@ -43,6 +43,7 @@ function attachCameraHttp(app) {
        v.confidence >= 0 && v.confidence <= 1;
     ai = {type:"ai",status:valid?"ok":v.status==="ok"?"error":v.status,
           method:v.method==="yolo"?"yolo":"opencv",
+          obstacle:v.method==="yolo"&&["clear","suspected","calibrating","unknown"].includes(v.obstacle)?v.obstacle:"unknown",
           levelCm:valid?Math.round(v.levelCm*100)/100:null,
           confidence:valid?Math.round(v.confidence*100)/100:null,
           at:Date.now()};
