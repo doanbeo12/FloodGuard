@@ -180,7 +180,7 @@ class YoloWaterLevelDetector:
             self.history = self.history[-5:]
             level = round(float(np.median(self.history)), 2)
             cv2.line(out, (x1,line_y), (x2,line_y), (0,255,70), 2)
-            return self._reply(out, "ok", f"YOLO: {level:.2f} cm" + (" | OBSTACLE SUSPECTED" if self.obstacle == "suspected" else ""), level,
+            return self._reply(out, "ok", f"YOLO: {level:.2f} cm" + (" | CO VAT CAN" if self.obstacle == "suspected" else ""), level,
                                round(prob, 3))
         except Exception:
             self.history.clear()
