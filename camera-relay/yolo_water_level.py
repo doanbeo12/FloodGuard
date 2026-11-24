@@ -24,13 +24,56 @@ class YoloWaterLevelDetector:
         self.conf = max(0.05, min(0.95, float(os.getenv("CAMERA_YOLO_CONF", "0.35"))))
         self.last_result = {"status": "uncalibrated", "levelCm": None, "confidence": None, "method": "yolo"}
         self.history = []
+        self.clean_mask = None
+        self.clean_line = None
+        self.baseline_count = 0
+        self.obstacle_hits = 0
+        self.obstacle = "calibrating"
 
     def _reply(self, image, status, caption, level=None, confidence=None):
-        self.last_result = {"status": status, "levelCm": level, "confidence": confidence, "method": "yolo"}
+        self.last_result = {"status": status, "levelCm": level, "confidence": confidence, "method": "yolo", "obstacle": self.obstacle}
         cv2.rectangle(image, (3, 3), (min(image.shape[1]-1, 620), 38), (0, 0, 0), -1)
         cv2.putText(image, caption, (9, 27), cv2.FONT_HERSHEY_SIMPLEX,
                     0.58, (0, 215, 70) if status == "ok" else (0, 190, 255), 2, cv2.LINE_AA)
         return image, level
+
+
+    def _detect_obstacle(self, mask, line_y):
+        """Flag loss of previously visible water, excluding changing surface height.
+        Assumes the FIRST FOUR images after relay startup show an unobstructed tank.
+        """
+        h, w = mask.shape
+        if self.clean_mask is None or self.clean_mask.shape != mask.shape:
+            self.clean_mask = mask.copy()
+            self.clean_line = line_y
+            self.baseline_count = 1
+            self.obstacle_hits = 0
+            self.obstacle = "calibrating"
+            return
+        start = max(int(h * 0.48), self.clean_line + 20, line_y + 20)
+        end = int(h * 0.96)
+        if end <= start + 15:
+            self.obstacle = "unknown"
+            return
+        reference = self.clean_mask[start:end]
+        current = mask[start:end]
+        count = int(np.count_nonzero(reference))
+        if count < max(200, int(reference.size * 0.08)):
+            self.obstacle = "unknown"
+            return
+        lost = np.count_nonzero(reference & ~current) / count
+        if self.baseline_count < 4:
+            if lost < 0.10:
+                self.baseline_count += 1
+                self.obstacle = "calibrating" if self.baseline_count < 4 else "clear"
+            else:
+                self.obstacle = "unknown"
+            return
+        if lost > 0.24:
+            self.obstacle_hits = min(self.obstacle_hits + 1, 3)
+        else:
+            self.obstacle_hits = max(self.obstacle_hits - 1, 0)
+        self.obstacle = "suspected" if self.obstacle_hits >= 2 else "clear"
 
     def _anchors(self):
         anchors = self.config.get("anchors", [])
@@ -123,6 +166,7 @@ class YoloWaterLevelDetector:
                 self.history.clear()
                 return self._reply(out, "low_confidence", "YOLO: WATERLINE OCCLUDED")
             line_y = y1+candidates[0]
+            self._detect_obstacle(mask, line_y)
             y_norm = line_y/height
             y0,y5,y10 = anchors
             if not (y10 <= y_norm <= y0):
@@ -136,7 +180,7 @@ class YoloWaterLevelDetector:
             self.history = self.history[-5:]
             level = round(float(np.median(self.history)), 2)
             cv2.line(out, (x1,line_y), (x2,line_y), (0,255,70), 2)
-            return self._reply(out, "ok", f"YOLO EXPERIMENT: {level:.2f} cm", level,
+            return self._reply(out, "ok", f"YOLO: {level:.2f} cm" + (" | OBSTACLE SUSPECTED" if self.obstacle == "suspected" else ""), level,
                                round(prob, 3))
         except Exception:
             self.history.clear()
