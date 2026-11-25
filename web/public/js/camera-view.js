@@ -36,6 +36,19 @@
     }
   }
 
+  function showFloodAlert(level) {
+    const card=el("floodAlertCard"), text=el("floodAlertText");
+    if (!card || !text) return;
+    const valid=typeof level==="number" && Number.isFinite(level) && level>=0;
+    const status=!valid ? ["--","unknown"]
+      :level>7 ? ["Ngập nghiêm trọng","critical"]
+      :level>5 ? ["Ngập cao","high"]
+      :level>=3 ? ["Đang ngập","flooding"]
+      :["Không ngập","safe"];
+    text.textContent=status[0];
+    card.className="card flood-alert flood-alert--"+status[1];
+  }
+
   function showAI(ai) {
     if (!aiLevel) return;
     const fresh = ai && Number.isFinite(Number(ai.at)) &&
@@ -50,6 +63,7 @@
       obstacleStatus.style.display = obstacle === "suspected" ? "" : "none";
     }
     aiLevel.textContent = valid ? ai.levelCm.toFixed(1) : "--";
+    showFloodAlert(valid ? ai.levelCm : null);
     const method = ai && ai.method === "yolo" ? "YOLO Segmentation" : "OpenCV";
     aiStatus.textContent = fresh ? (method + " • " + (labels[ai.status] || "Chưa có dữ liệu AI")) : labels.offline;
     aiConfidence.textContent = valid && Number.isFinite(ai.confidence) ?
