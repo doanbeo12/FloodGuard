@@ -139,7 +139,7 @@ function forecast() {
     reason:!trained?"MODEL_NOT_TRAINED":!hasResult?"INSUFFICIENT_FEATURES":null,
     rain,water,nearTerm,model:{
       ready:trained,modelsAvailable:model.modelsAvailable,
-      trainedOn:model.trainedOn,metrics:model.metrics
+      trainedOn:model.trainedOn,metrics:model.metrics,probabilities:model.probabilities
     },tide:{available:false,reason:"NO_TIDE_SENSOR"}};
 }
 module.exports={observe,forecast};
