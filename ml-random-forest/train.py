@@ -19,7 +19,7 @@ FEATURES = [
     "windMean2m", "rainTips2m", "waterSlope2m", "rainingNow", "rainPlateWet",
 ]
 SENTINEL = -999.0
-HORIZONS_MIN = {"rain3":3, "flood3":3, "rain24":24, "rain48":48, "rain64":64}
+HORIZONS_MIN = {"rain1":1, "rain2":2, "rain3":3, "flood3":3}
 COLUMNS = [
     "session","at_ms","seq","nodeId","temperatureC","humidityPct","pressureHpa",
     "windRpm","rainTipsTotal","rainTipsInterval","rainPlateWet","raining",
@@ -82,7 +82,7 @@ def future_covered(part,start,end):
 def target(g,i,name):
     now=int(g.at_ms.iloc[i])
     t=int(HORIZONS_MIN[name]*60000)
-    if name=="rain3":
+    if name.startswith("rain"):
         # Predict FUTURE rain onset; current rain already detected, not predicted.
         if flag(g.raining.iloc[i]) or flag(g.rainPlateWet.iloc[i]):return None
         window=g[(g.at_ms>now)&(g.at_ms<=now+t)]
@@ -95,12 +95,6 @@ def target(g,i,name):
         valid=window[window.aiLevelCm.notna()]
         if not future_covered(valid,now,now+t):return None
         return int((valid.aiLevelCm>=7.0).any())
-    # At future simulated hour h: will the rain plate/bucket register rain
-    # in a five-minute verification window centered at horizon h?
-    window=g[(g.at_ms>=now+t-150000)&(g.at_ms<=now+t+150000)]
-    if not future_covered(window,now+t-150000,now+t+150000):return None
-    return int(any(flag(x) for x in window.raining) or
-               any(flag(x) for x in window.rainPlateWet))
 
 def export_tree(est):
     t=est.tree_
@@ -206,11 +200,10 @@ def main():
         "featureNames":FEATURES,"missingValue":SENTINEL,
         "simulation":{"realMinutesPerSimHour":1},
         "targets":{
+            "rain1":"Rain starts within next 1 real minute if currently dry",
+            "rain2":"Rain starts within next 2 real minutes if currently dry",
             "rain3":"Rain starts within next 3 real minutes if currently dry",
             "flood3":"AI water level reaches 7 cm within next 3 real minutes",
-            "rain24":"Rain in the 5-min window centered 24 real minutes ahead",
-            "rain48":"Rain in the 5-min window centered 48 real minutes ahead",
-            "rain64":"Rain in the 5-min window centered 64 real minutes ahead",
         },
         "models":models
     }
