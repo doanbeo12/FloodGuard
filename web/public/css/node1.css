@@ -38,3 +38,12 @@
 #levelHistoryChart{display:block;width:100%;height:280px;margin-top:12px;overflow:visible}
 #levelChartStatus{margin-top:8px}
 @media(max-width:620px){.level-chart-head h2{font-size:19px}.level-range button{padding:7px 9px;font-size:12px}.level-chart-card{padding:14px 10px}#levelHistoryChart{height:220px}}
+
+/* AI-measured flood status; no stale reading is classified as safe. */
+.flood-alert{display:flex;flex-direction:column;justify-content:flex-start;transition:background-color .2s,border-color .2s}
+.flood-alert-value{font-size:clamp(27px,3vw,40px);line-height:1.2;margin-top:30px}
+.flood-alert--unknown{background:#fff;color:#14263d}
+.flood-alert--safe{background:#ecfdf3;border-color:#b8ebd0;color:#12683f}
+.flood-alert--flooding{background:#fff7df;border-color:#f0d78c;color:#805500}
+.flood-alert--high{background:#ffebdc;border-color:#ffc49e;color:#a6420c}
+.flood-alert--critical{background:#ffebee;border-color:#ffc1cb;color:#aa1732}
