@@ -1,6 +1,6 @@
 "use strict";
 // FloodGuard sensor-only, experimental DEMO forecast.
-// 1 real minute = 1 simulated hour; 24/48/64h => 24/48/64 real minutes.
+// 1 real minute = 1 simulated hour; forecast horizons 1/2/3h => 1/2/3 real minutes.
 // No external weather API, tidal data or forecast services.
 const SAMPLE_MAX = 540; // 90 min @ 10s
 const MAX_AGE_MS = 30000;
@@ -57,7 +57,7 @@ function forecast() {
   const historyMinutes=first?round((last.at-first.at)/60000,2):0;
   const base={experimental:true,source:"node1-sensors",
     timeScale:{realMinutesPerSimHour:1},
-    horizons:[24,48,64],
+    horizons:[1,2,3],
     at:new Date(now).toISOString(),
     lastSensorAt:last?new Date(last.at).toISOString():null,
     historyMinutes, online:fresh,
@@ -133,13 +133,13 @@ function forecast() {
   const nearTerm={simHours:3,realMinutes:3,rainRisk:rain3h,
     floodRisk:flood3h,waterCm:finite(waterValue)?round(waterValue,2):null,
     waterTrend:water.status};
-  const trained=model.modelsAvailable.length>0;
+  const trained=["rain1","rain2","rain3"].some(name=>model.modelsAvailable.includes(name));
   const hasResult=rainNow || Object.keys(probabilities).length>0;
   return {...base,ready:trained&&hasResult,
     reason:!trained?"MODEL_NOT_TRAINED":!hasResult?"INSUFFICIENT_FEATURES":null,
     rain,water,nearTerm,model:{
       ready:trained,modelsAvailable:model.modelsAvailable,
-      trainedOn:model.trainedOn,metrics:model.metrics
+      trainedOn:model.trainedOn,metrics:model.metrics,probabilities:model.probabilities
     },tide:{available:false,reason:"NO_TIDE_SENSOR"}};
 }
 module.exports={observe,forecast};

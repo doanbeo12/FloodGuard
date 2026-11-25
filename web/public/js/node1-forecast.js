@@ -33,17 +33,18 @@
       set("forecastState",!live?"Ngoại tuyến":d.reason==="MODEL_NOT_TRAINED"?"Chưa huấn luyện RF":d.ready?"Random Forest":"Đang thu dữ liệu");
       set("forecastRain3h",live?rainLabel[rainCode]:"Chưa có dữ liệu");
       set("forecastFlood3h",live?floodLabel[floodCode]:"Chưa có dữ liệu");
-      for(const hours of [24,48,64]){
+      for(const hours of [1,2,3]){
         const item=live?d.rain?.byHorizon?.find(x=>x.simHours===hours):null;
-        set("forecast"+hours,item?.outlook||"Chưa có dữ liệu");
+        const prob=live?d.model?.probabilities?.["rain"+hours]:null;
+        const floodProb=live?d.model?.probabilities?.["flood"+hours]:null;
+        set("forecast"+hours,item?.outlook||"Chưa có mô hình");
         set("forecastIcon"+hours,item?iconFor(item.status):"☁️");
-        // Do not invent future temperature or humidity forecasts.
-        set("forecastTemp"+hours,"Nhiệt độ: --");
-        set("forecastHumidity"+hours,"Độ ẩm: --");
+        set("forecastRainProb"+hours,typeof prob==="number"?"Mưa: "+Math.round(prob*100)+"%":"Mưa: --");
+        set("forecastFlood"+hours,typeof floodProb==="number"?"Ngập: "+Math.round(floodProb*100)+"%":"Ngập: chưa huấn luyện");
       }
     }catch(err){
       set("forecastState","Mất kết nối");
-      for(const id of ["forecastRain3h","forecastFlood3h","forecast24","forecast48","forecast64"])
+      for(const id of ["forecastRain3h","forecastFlood3h","forecast1","forecast2","forecast3"])
         set(id,"Chưa có dữ liệu");
       console.warn("[FloodGuard forecast]",err.message||err);
     }finally{clearTimeout(watchdog);busy=false;schedule();}
