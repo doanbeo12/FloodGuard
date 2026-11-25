@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>FloodGuard – Giám sát ngập</title>
-  <link rel="stylesheet" href="css/node1.css?v=level-chart-1">
+  <link rel="stylesheet" href="css/node1.css?v=flood-alert-1">
 </head>
 <body>
   <main class="wrap">
@@ -28,14 +28,9 @@
         <div class="meta"><span>Tổng số lần lật</span><strong id="rainTotal">--</strong></div>
         <div class="meta"><span>Cảm biến mưa</span><strong id="rainPlate">--</strong></div>
       </article>
-      <article class="card">
-        <div class="label">ĐIỀU KHIỂN BƠM</div>
-        <div class="pump-grid">
-          <div><span>BƠM CẤP</span><strong id="pumpIn">--</strong></div>
-          <div><span>BƠM HỒI</span><strong id="pumpOut">--</strong></div>
-        </div>
-        <div class="meta"><span>Chế độ</span><strong id="pumpMode">--</strong></div>
-        <div id="pumpFault" class="fault"></div>
+      <article class="card flood-alert" id="floodAlertCard" aria-live="polite">
+        <div class="label">CẢNH BÁO NGẬP</div>
+        <div class="big flood-alert-value" id="floodAlertText">--</div>
       </article>
     </section>
 
@@ -90,7 +85,7 @@
   </main>
   <script src="/config.js"></script>
   <script src="js/node1-dashboard.js?v=live-refresh-2"></script>
-  <script src="js/camera-view.js?v=obstacle-short-1"></script>
+  <script src="js/camera-view.js?v=flood-alert-1"></script>
   <script src="js/node1-forecast.js?v=short-yes-no-1"></script>
   <script src="js/node1-level-chart.js?v=level-chart-1"></script>
 </body>
